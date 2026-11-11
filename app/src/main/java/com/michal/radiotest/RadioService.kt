@@ -130,7 +130,7 @@ class RadioService : MediaLibraryService() {
         odswiezOpis()
         rmf.start(start)
         LogMowy.dodaj(String.format(Locale.US, "→ RMF24 (opóźnienie %.0f s)", rmf.opoznienieS()))
-        if (trybSpotify) spotify?.playerApi?.pause()
+        if (trybSpotify) naSpotify { it.playerApi.pause() }
         glosnoscGlowna = if (trybSpotify) 0f else player.volume
         przejscie { t ->
             rmf.ustawGlosnosc(t)
@@ -160,7 +160,7 @@ class RadioService : MediaLibraryService() {
         trybRmf = false
         LogMowy.dodaj("← powrót do radia głównego")
         odswiezOpis()
-        if (trybSpotify) spotify?.playerApi?.resume()
+        if (trybSpotify) naSpotify { it.playerApi.resume() }
         przejscie(koniec = { rmf.stop(); LogMowy.graRmf.value = false }) { t ->
             rmf.ustawGlosnosc(1 - t)
             if (!trybSpotify) player.volume = t
@@ -171,7 +171,7 @@ class RadioService : MediaLibraryService() {
     private fun przerwijRmf() {
         handler.removeCallbacks(krokPrzejscia)
         rmf.stop()
-        if (trybRmf && trybSpotify) spotify?.playerApi?.resume()
+        if (trybRmf && trybSpotify) naSpotify { it.playerApi.resume() }
         val byl = trybRmf
         trybRmf = false
         LogMowy.graRmf.value = false
@@ -283,7 +283,10 @@ class RadioService : MediaLibraryService() {
                 }
             } else if (player.mediaItemCount > 0) { nasluchStart(); wezFokus() }
             if (!trybSpotify) return
-            spotify?.playerApi?.let { if (playWhenReady) it.resume() else it.pause() }
+            naSpotify {
+                if (playWhenReady) it.playerApi.resume() else it.playerApi.pause()
+                LogMowy.dodaj("Spotify: " + if (playWhenReady) "wznów" else "pauza")
+            }
         }
         override fun onPlaybackStateChanged(state: Int) {
             if (state == Player.STATE_IDLE) { przerwijRmf(); nasluch.stop(); if (!pauzaRozmowa) oddajFokus() }
@@ -651,20 +654,26 @@ class RadioService : MediaLibraryService() {
         player.prepare()
         player.play()
         nasluchStart()
-        val start = { r: SpotifyAppRemote ->
+        naSpotify { r ->
             r.playerApi.setShuffle(true).setResultCallback {
                 if (pl.utwory > 1) r.playerApi.skipToIndex(pl.uri, los.nextInt(pl.utwory))
                 else r.playerApi.play(pl.uri)
             }
         }
-        spotify?.takeIf { it.isConnected }?.let { start(it); return }
+    }
+
+    /** Wykonuje akcję na Spotify; gdy połączenie się zerwało, łączy ponownie. */
+    private fun naSpotify(dlaKonca: Boolean = false, akcja: (SpotifyAppRemote) -> Unit) {
+        spotify?.takeIf { it.isConnected }?.let { akcja(it); return }
         val params = ConnectionParams.Builder(CLIENT_ID).setRedirectUri(REDIRECT_URI)
             .showAuthView(false).build()
         SpotifyAppRemote.connect(this, params, object : Connector.ConnectionListener {
             override fun onConnected(r: SpotifyAppRemote) {
+                if (dlaKonca) { akcja(r); SpotifyAppRemote.disconnect(r); return }
                 if (!trybSpotify) { SpotifyAppRemote.disconnect(r); return }
+                spotify?.let { SpotifyAppRemote.disconnect(it) }
                 spotify = r
-                start(r)
+                akcja(r)
                 r.playerApi.subscribeToPlayerState().setEventCallback { st ->
                     val t = st.track ?: return@setEventCallback
                     val tytul = "${t.artist?.name ?: ""} – ${t.name ?: ""}"
@@ -678,18 +687,16 @@ class RadioService : MediaLibraryService() {
             override fun onFailure(t: Throwable) {
                 Log.e("Radio", "Spotify: błąd połączenia", t)
                 LogMowy.dodaj("Spotify: błąd połączenia ${t.javaClass.simpleName}")
-                if (trybSpotify) player.replaceMediaItem(0,
-                    elementSpotify(s, "Błąd Spotify: ${t.javaClass.simpleName}. Połącz w Ustawieniach."))
+                if (trybSpotify && !dlaKonca) { spotifyUtwor = "Błąd Spotify: połącz w Ustawieniach"; odswiezOpis() }
             }
         })
     }
 
     private fun zakonczSpotify() {
         trybSpotify = false
-        spotify?.let { r ->
-            r.playerApi.pause()
-            SpotifyAppRemote.disconnect(r)
-        }
+        val r = spotify
+        if (r != null && r.isConnected) { r.playerApi.pause(); SpotifyAppRemote.disconnect(r) }
+        else naSpotify(dlaKonca = true) { it.playerApi.pause() }
         spotify = null
         player.repeatMode = Player.REPEAT_MODE_OFF
     }
