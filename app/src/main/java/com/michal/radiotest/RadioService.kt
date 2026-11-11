@@ -191,8 +191,41 @@ class RadioService : MediaLibraryService() {
         handler.post(krokPrzejscia)
     }
 
+    // Fokus dźwięku obsługujemy sami: powiadomienia i inne aplikacje nie zatrzymują radia,
+    // pauza tylko na czas rozmowy telefonicznej.
+    private val am by lazy { getSystemService(AudioManager::class.java) }
+    private var pauzaRozmowa = false
+    private fun rozmowa() = am.mode == AudioManager.MODE_IN_CALL ||
+        am.mode == AudioManager.MODE_IN_COMMUNICATION || am.mode == AudioManager.MODE_RINGTONE
+    private val zadanieFokusu by lazy {
+        android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC).build()
+            )
+            .setWillPauseWhenDucked(false)
+            .setOnAudioFocusChangeListener({ z ->
+                when (z) {
+                    AudioManager.AUDIOFOCUS_LOSS, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ->
+                        if (rozmowa() && player.playWhenReady) {
+                            pauzaRozmowa = true
+                            LogMowy.dodaj("Rozmowa telefoniczna: pauza")
+                            player.pause()
+                        } else LogMowy.dodaj("Inna aplikacja użyła dźwięku, gram dalej")
+                    AudioManager.AUDIOFOCUS_GAIN -> if (pauzaRozmowa) {
+                        pauzaRozmowa = false
+                        LogMowy.dodaj("Koniec rozmowy: wznawiam")
+                        player.play()
+                    }
+                }
+            }, handler)
+            .build()
+    }
+    private fun wezFokus() { if (!trybSpotify) am.requestAudioFocus(zadanieFokusu) }
+    private fun oddajFokus() { am.abandonAudioFocusRequest(zadanieFokusu) }
+
     private fun nowyPlayer(fokus: Boolean): ExoPlayer = ExoPlayer.Builder(this)
-        .setAudioAttributes(atrybuty, fokus)
+        .setAudioAttributes(atrybuty, false)
         .setHandleAudioBecomingNoisy(true)
         .setWakeMode(C.WAKE_MODE_NETWORK)
         .build()
@@ -228,12 +261,12 @@ class RadioService : MediaLibraryService() {
                     probyFokus = 0
                     handler.postDelayed(probaWznowienia, 3000)
                 }
-            } else if (player.mediaItemCount > 0) nasluchStart()
+            } else if (player.mediaItemCount > 0) { nasluchStart(); wezFokus() }
             if (!trybSpotify) return
             spotify?.playerApi?.let { if (playWhenReady) it.resume() else it.pause() }
         }
         override fun onPlaybackStateChanged(state: Int) {
-            if (state == Player.STATE_IDLE) { przerwijRmf(); nasluch.stop() }
+            if (state == Player.STATE_IDLE) { przerwijRmf(); nasluch.stop(); if (!pauzaRozmowa) oddajFokus() }
             if (state == Player.STATE_IDLE && trybSpotify) zakonczSpotify()
         }
     }
@@ -488,12 +521,13 @@ class RadioService : MediaLibraryService() {
         val moznaPrzenikac = !bylSpotify && player.isPlaying && poprzednia != null &&
             !(diFm(poprzednia.adres) && diFm(s.adres))
         if (moznaPrzenikac) { przenikaj(item); return }
-        player.setAudioAttributes(atrybuty, true)
+        player.setAudioAttributes(atrybuty, false)
         player.volume = 1f
         player.repeatMode = Player.REPEAT_MODE_OFF
         player.setMediaItem(item)
         player.prepare()
         player.play()
+        wezFokus()
         nasluchStart()
     }
 
@@ -550,7 +584,7 @@ class RadioService : MediaLibraryService() {
         val g = stary.volume
         przejscie(koniec = {
             stary.release()
-            nowy.setAudioAttributes(atrybuty, true)
+            nowy.setAudioAttributes(atrybuty, false)
         }) { t ->
             stary.volume = g * (1 - t)
             nowy.volume = t
@@ -580,6 +614,7 @@ class RadioService : MediaLibraryService() {
             return
         }
         handler.removeCallbacks(ponow)
+        oddajFokus()     // fokus potrzebny aplikacji Spotify
         trybSpotify = true
         spotifyUtwor = ""
         // cisza w pętli, bez fokusu dźwięku (inaczej Spotify by ją wyciszał i odwrotnie)
@@ -651,6 +686,7 @@ class RadioService : MediaLibraryService() {
         handler.removeCallbacksAndMessages(null)
         if (trybSpotify) zakonczSpotify()
         anulujPrzenikanie()
+        oddajFokus()
         rmf.stop()
         nasluch.zakoncz()
         sesja?.run { player.release(); release() }
