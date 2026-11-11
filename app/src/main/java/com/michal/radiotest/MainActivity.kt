@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -114,6 +115,8 @@ class MainActivity : ComponentActivity() {
     private val playlisty = mutableStateListOf<Playlista>()
     private var pobieranie by mutableStateOf(false)
     private var pobierzPoZgodzie = false
+    private var autostart by mutableStateOf(false)
+    private var autostartWykonany = false
     private val zgodaPowiadomienia =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -131,6 +134,8 @@ class MainActivity : ComponentActivity() {
         autoLimit = StanLosowania.autoMin(this)
         wzgledny = StanLosowania.wzgledny(this)
         spotifyPolaczone = SpotifyUst.polaczone(this)
+        autostart = prefs.getBoolean("autostart", false)
+        autostartWykonany = savedInstanceState != null
         playlista = SpotifyUst.wybrana(this)
         setContent {
             val ciemny = when (motyw) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
@@ -450,6 +455,13 @@ class MainActivity : ComponentActivity() {
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()
             Text("Ustawienia", style = MaterialTheme.typography.titleMedium)
+            Row(
+                Modifier.fillMaxWidth().clickable { ustawAutostart(!autostart) },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = autostart, onCheckedChange = { ustawAutostart(it) })
+                Text("Graj losowo po uruchomieniu aplikacji")
+            }
             Opcja("Losowanie raz dziennie", !trybAuto) { ustawTryb(false) }
             Opcja("Losowanie co X minut", trybAuto) { ustawTryb(true) }
             if (trybAuto) Column(Modifier.padding(start = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -559,6 +571,9 @@ class MainActivity : ComponentActivity() {
             kontroler = c
             c.addListener(sluchacz)
             odswiez(c)
+            // autostart: tylko przy pierwszym otwarciu, gdy nic jeszcze nie gra
+            if (autostart && !autostartWykonany && !c.playWhenReady) losuj()
+            autostartWykonany = true
         }, ContextCompat.getMainExecutor(this))
     }
 
@@ -628,6 +643,11 @@ class MainActivity : ComponentActivity() {
     private fun pauza() {
         val c = kontroler ?: return
         if (c.playWhenReady) c.pause() else c.play()
+    }
+
+    private fun ustawAutostart(a: Boolean) {
+        autostart = a
+        prefs.edit().putBoolean("autostart", a).apply()
     }
 
     private fun ustawWzgledny(w: Boolean) {
