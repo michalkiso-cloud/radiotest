@@ -448,6 +448,9 @@ class RadioService : MediaLibraryService() {
         return m.stacja(pula.last().id)
     }
 
+    /** Numer losowania: rośnie przy każdym nowym wylosowaniu stacji. */
+    private fun nrLosu() = prefs.getInt("los_nr", 0)
+
     private fun losuj() {
         val m = Magazyn(this)
         val e = prefs.edit().putBoolean("aktywne", true)
@@ -455,14 +458,14 @@ class RadioService : MediaLibraryService() {
             val id = prefs.getString("auto_id", null)
             val biezaca = id?.takeIf { m.wLosowaniu(it) }?.let { m.stacja(it) }
             if (biezaca != null && StanLosowania.autoSek(this) < StanLosowania.autoMin(this) * 60) biezaca
-            else wylosuj(m, id)?.also { e.putString("auto_id", it.id).putInt("auto_sek", 0) }
+            else wylosuj(m, id)?.also { e.putString("auto_id", it.id).putInt("auto_sek", 0).putInt("los_nr", nrLosu() + 1) }
         } else {
             val dzis = LocalDate.now().toString()
             val id = prefs.getString("dzien_id", null)
             val biezaca = id?.takeIf { prefs.getString("dzien_data", "") == dzis && m.wLosowaniu(it) }
                 ?.let { m.stacja(it) }
             biezaca ?: wylosuj(m, null)?.also {
-                e.putString("dzien_data", dzis).putString("dzien_id", it.id)
+                e.putString("dzien_data", dzis).putString("dzien_id", it.id).putInt("los_nr", nrLosu() + 1)
             }
         }
         e.apply()
@@ -482,7 +485,7 @@ class RadioService : MediaLibraryService() {
             if (sek >= StanLosowania.autoMin(this@RadioService) * 60) {
                 val m = Magazyn(this@RadioService)
                 val nowa = wylosuj(m, prefs.getString("auto_id", null))
-                prefs.edit().putInt("auto_sek", 0).putString("auto_id", nowa?.id).apply()
+                prefs.edit().putInt("auto_sek", 0).putString("auto_id", nowa?.id).putInt("los_nr", nrLosu() + 1).apply()
                 LogMowy.dodaj("Auto: minął czas, zmiana stacji na ${nowa?.nazwa ?: "(brak)"}")
                 nowa?.let { graj(it) }
             } else {
@@ -533,7 +536,16 @@ class RadioService : MediaLibraryService() {
         val poprzednia = obecna
         obecna = s
         icyTytul = ""
-        if (s.adres == SPOTIFY_ADRES) { grajSpotify(s); return }
+        val nr = ++numerGraj
+        val gralRadio = !trybSpotify && player.isPlaying && player.volume > 0f
+        if (s.adres == SPOTIFY_ADRES) {
+            // radio → Spotify: najpierw ściszenie radia
+            if (gralRadio) {
+                val g = player.volume
+                przejscie(koniec = { if (nr == numerGraj) grajSpotify(s) }) { t -> player.volume = g * (1 - t) }
+            } else grajSpotify(s)
+            return
+        }
         val bylSpotify = trybSpotify
         if (trybSpotify) zakonczSpotify()
         val klucz = getSharedPreferences("ustawienia", MODE_PRIVATE).getString("klucz_di", "") ?: ""
@@ -549,9 +561,28 @@ class RadioService : MediaLibraryService() {
         val moznaPrzenikac = !bylSpotify && player.isPlaying && poprzednia != null &&
             !(diFm(poprzednia.adres) && diFm(s.adres))
         if (moznaPrzenikac) { przenikaj(item); return }
+        // bez przenikania (DI.FM → DI.FM, Spotify → radio): ściszenie, przełączenie, pogłośnienie
+        if (gralRadio) {
+            val g = player.volume
+            przejscie(koniec = { if (nr == numerGraj) startZPoglosnieniem(item, nr) }) { t -> player.volume = g * (1 - t) }
+        } else startZPoglosnieniem(item, nr)
+    }
+
+    private var numerGraj = 0
+
+    private fun startZPoglosnieniem(item: MediaItem, nr: Int) {
         player.setAudioAttributes(atrybuty, false)
-        player.volume = 1f
+        player.volume = 0f
         player.repeatMode = Player.REPEAT_MODE_OFF
+        val p = player
+        p.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isPlaying) return
+                p.removeListener(this)
+                if (nr != numerGraj || p !== player) return
+                przejscie { t -> if (nr == numerGraj && p === player) p.volume = t }
+            }
+        })
         player.setMediaItem(item)
         player.prepare()
         player.play()
@@ -654,6 +685,17 @@ class RadioService : MediaLibraryService() {
         player.prepare()
         player.play()
         nasluchStart()
+        // ta sama stacja z tego samego losowania (po pauzie, stopie, zamknięciu aplikacji):
+        // Spotify gra dalej od miejsca, w którym stanęło
+        val zLosu = StanLosowania.losujeTeraz(this)
+        if (zLosu && prefs.getInt("spotify_los_nr", -1) == nrLosu()) {
+            LogMowy.dodaj("Spotify: wznawiam (to samo losowanie)")
+            naSpotify { r ->
+                r.playerApi.resume().setErrorCallback { startSpotify(pl.uri, pl.utwory) }
+            }
+            return
+        }
+        prefs.edit().putInt("spotify_los_nr", if (zLosu) nrLosu() else -1).apply()
         val token = SpotifyUst.token(this)
         if (token == null) startSpotify(pl.uri, pl.utwory)
         else Thread {
