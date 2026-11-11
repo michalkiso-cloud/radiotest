@@ -167,7 +167,6 @@ class MainActivity : ComponentActivity() {
         ) { pad ->
             Column(Modifier.padding(pad).fillMaxSize()) {
                 Naglowek()
-                HorizontalDivider(thickness = 2.dp, color = MaterialTheme.colorScheme.primary)
                 TabRow(selectedTabIndex = zakladka) {
                     Tab(zakladka == 0, { zakladka = 0 }, text = { Text("Stacje") })
                     Tab(zakladka == 1, { zakladka = 1 }, text = { Text("Losowanie") })
@@ -236,9 +235,11 @@ class MainActivity : ComponentActivity() {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(if (stacja.isEmpty()) "Nic nie gra" else stacja,
-                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp))
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
+                        fontWeight = FontWeight.Bold)
                     if (utwor.isNotEmpty()) Text(utwor, fontSize = 17.sp,
-                        color = if (ciemny) Color(0xFFFFEB3B) else Color(0xFF8D6E00),
+                        fontWeight = if (ciemny) FontWeight.Normal else FontWeight.SemiBold,
+                        color = if (ciemny) Color(0xFFFFEB3B) else Color(0xFFB45309),
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 WyborMotywu()
@@ -248,6 +249,10 @@ class MainActivity : ComponentActivity() {
                 "Auto: wykorzystane $autoMin min z $autoLimit",
                 color = if (ciemny) Color(0xFFF48FB1) else Color(0xFFAD1457),
                 style = MaterialTheme.typography.bodySmall
+            )
+            if (stacja.isNotEmpty()) HorizontalDivider(
+                Modifier.padding(end = 12.dp, top = 6.dp),
+                thickness = 2.dp, color = MaterialTheme.colorScheme.primary
             )
             Column(
                 Modifier.fillMaxWidth().padding(end = 12.dp, top = 6.dp),
