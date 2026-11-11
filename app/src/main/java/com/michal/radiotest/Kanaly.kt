@@ -10,7 +10,7 @@ import java.util.UUID
 data class Stacja(val id: String, val nazwa: String, val adres: String)
 
 /** Stacja biorąca udział w losowaniu, z wagą (domyślnie 4). */
-data class Los(val id: String, val waga: Int)
+data class Los(val id: String, val waga: Double)
 
 const val ZNACZNIK_DI = "{KLUCZ_DI}"
 const val RMF24 = "https://rs201-krk.rmfstream.pl/RMF24"
@@ -30,7 +30,7 @@ class Magazyn(ctx: Context) {
             })
             val l = JSONArray(prefs.getString("losowanie", "[]"))
             losowanie.addAll((0 until l.length()).map { l.getJSONObject(it) }
-                .map { Los(it.getString("id"), it.optInt("waga", 4)) })
+                .map { Los(it.getString("id"), it.optDouble("waga", 4.0)) })
         }
     }
 
@@ -47,7 +47,7 @@ class Magazyn(ctx: Context) {
         lista.forEach { (n, a, w) ->
             val st = Stacja(noweId(), n, a)
             stacje.add(st)
-            if (w > 0) losowanie.add(Los(st.id, w))
+            if (w > 0) losowanie.add(Los(st.id, w.toDouble()))
         }
         zapisz()
     }
@@ -74,22 +74,33 @@ class Magazyn(ctx: Context) {
     }
 
     fun dodajDoLosowania(id: String) {
-        if (!wLosowaniu(id)) losowanie.add(Los(id, 4)); zapisz()
+        if (!wLosowaniu(id)) {
+            // nowa stacja dostaje średnią wagę pozostałych
+            val w = if (losowanie.isEmpty()) 4.0 else losowanie.sumOf { it.waga } / losowanie.size
+            losowanie.add(Los(id, w))
+        }
+        zapisz()
     }
 
     fun usunZLosowania(id: String) {
         losowanie.removeAll { it.id == id }; zapisz()
     }
 
-    fun ustawWage(id: String, waga: Int) {
+    /** Ustawia szansę stacji w procentach; pozostałe stacje zachowują swoje proporcje. */
+    fun ustawProcent(id: String, procent: Double) {
         val i = losowanie.indexOfFirst { it.id == id }
-        if (i >= 0) losowanie[i] = Los(id, waga.coerceIn(1, 20))
+        if (i < 0) return
+        val reszta = losowanie.filter { it.id != id }.sumOf { it.waga }
+        if (reszta <= 0) return
+        val p = procent.coerceIn(0.5, 99.5)
+        losowanie[i] = Los(id, p / (100 - p) * reszta)
         zapisz()
     }
 
-    fun procent(los: Los): Float {
+    fun procent(id: String): Double {
         val suma = losowanie.sumOf { it.waga }
-        return if (suma == 0) 0f else 100f * los.waga / suma
+        val w = losowanie.firstOrNull { it.id == id }?.waga ?: 0.0
+        return if (suma <= 0) 0.0 else 100 * w / suma
     }
 
     private fun zapisz() {

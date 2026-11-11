@@ -13,29 +13,39 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -43,6 +53,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -51,15 +62,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.runtime.LaunchedEffect
-import androidx.media3.session.SessionCommand
-import kotlinx.coroutines.delay
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -68,30 +72,37 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
+import kotlinx.coroutines.delay
 import java.util.Locale
 
 private val ZIELONY = Color(0xFF2E7D32)
+
+private fun procentTekst(p: Double) = String.format(Locale("pl"), "%.1f%%", p)
 
 class MainActivity : ComponentActivity() {
     private var kontroler: MediaController? = null
     private var stacja by mutableStateOf("")
     private var utwor by mutableStateOf("")
     private var status by mutableStateOf("Wybierz stację.")
+    private var graTeraz by mutableStateOf(false)
     private var kluczDi by mutableStateOf("")
     private var bateriaOk by mutableStateOf(false)
     private var motyw by mutableIntStateOf(0)        // 0 system, 1 jasny, 2 ciemny
     private var trybAuto by mutableStateOf(false)
     private var autoMin by mutableIntStateOf(0)
+    private var autoLimit by mutableIntStateOf(60)
+    private var wzgledny by mutableStateOf(true)
     private var losujeTeraz by mutableStateOf(false)
     private val zgodaPowiadomienia =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -107,6 +118,8 @@ class MainActivity : ComponentActivity() {
         kluczDi = prefs.getString("klucz_di", "") ?: ""
         motyw = prefs.getInt("motyw", 0)
         trybAuto = StanLosowania.trybAuto(this)
+        autoLimit = StanLosowania.autoMin(this)
+        wzgledny = StanLosowania.wzgledny(this)
         setContent {
             val ciemny = when (motyw) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
             MaterialTheme(colorScheme = if (ciemny) darkColorScheme() else lightColorScheme()) {
@@ -123,13 +136,14 @@ class MainActivity : ComponentActivity() {
         var edycja by remember { mutableStateOf<Stacja?>(null) }
         var nowa by remember { mutableStateOf(false) }
         var wybor by remember { mutableStateOf(false) }
+        var szansa by remember { mutableStateOf<Stacja?>(null) }
         var doUsuniecia by remember { mutableStateOf<Stacja?>(null) }
 
         Scaffold(
             floatingActionButton = {
-                FloatingActionButton(onClick = {
-                    if (zakladka == 0) nowa = true else wybor = true
-                }) { Icon(Icons.Filled.Add, contentDescription = "Dodaj") }
+                if (zakladka == 0) FloatingActionButton(onClick = { nowa = true }) {
+                    Icon(Icons.Filled.Add, contentDescription = "Dodaj stację")
+                }
             }
         ) { pad ->
             Column(Modifier.padding(pad).fillMaxSize()) {
@@ -141,7 +155,7 @@ class MainActivity : ComponentActivity() {
                 if (zakladka == 0) ListaStacji(
                     onEdytuj = { edycja = it },
                     onUsun = { doUsuniecia = it }
-                ) else ListaLosowania()
+                ) else ZakladkaLosowania(onSzansa = { szansa = it }, onDodaj = { wybor = true })
             }
         }
 
@@ -160,6 +174,7 @@ class MainActivity : ComponentActivity() {
                 dismissButton = { TextButton(onClick = { doUsuniecia = null }) { Text("Anuluj") } }
             )
         }
+        szansa?.let { s -> OknoSzansy(s) { szansa = null } }
         if (wybor) OknoWyboru { wybor = false }
     }
 
@@ -195,26 +210,40 @@ class MainActivity : ComponentActivity() {
             }
         }
         val ciemny = MaterialTheme.colorScheme.background.red < 0.5f
-        Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)) {
+        Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Radio", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text(if (stacja.isEmpty()) "Nic nie gra" else stacja,
+                        style = MaterialTheme.typography.titleMedium)
+                    if (utwor.isNotEmpty()) Text(utwor,
+                        color = if (ciemny) Color(0xFFFFEB3B) else Color(0xFF8D6E00),
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
                 WyborMotywu()
             }
-            Text(if (stacja.isEmpty()) "Nic nie gra" else "Gra: $stacja",
-                style = MaterialTheme.typography.titleMedium)
-            if (utwor.isNotEmpty()) Text(utwor, color = if (ciemny) Color(0xFFFFEB3B) else Color(0xFF8D6E00),
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(status, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                if (stacja.isNotEmpty()) TextButton(onClick = { stop() }) { Text("Stop") }
-            }
+            Text(status, style = MaterialTheme.typography.bodySmall)
             if (trybAuto && losujeTeraz && stacja.isNotEmpty()) Text(
-                "Auto: wykorzystane $autoMin min z ${AUTO_CZAS_S / 60}",
+                "Auto: wykorzystane $autoMin min z $autoLimit",
                 color = if (ciemny) Color(0xFFF48FB1) else Color(0xFFAD1457),
                 style = MaterialTheme.typography.bodySmall
             )
-            Button(onClick = { losuj() }, modifier = Modifier.fillMaxWidth().padding(end = 12.dp, top = 4.dp)) {
-                Text(if (trybAuto) "Graj losowo (tryb auto)" else "Graj losowo (stacja dnia)")
+            Column(
+                Modifier.fillMaxWidth().padding(end = 12.dp, top = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Button(onClick = { losuj() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Graj losowo")
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { pauza() }, enabled = stacja.isNotEmpty(),
+                        modifier = Modifier.weight(1f)) {
+                        Text(if (graTeraz) "❚❚  Pauza" else "▶  Wznów")
+                    }
+                    OutlinedButton(onClick = { stop() }, enabled = stacja.isNotEmpty(),
+                        modifier = Modifier.weight(1f)) {
+                        Text("■  Stop")
+                    }
+                }
             }
         }
     }
@@ -223,54 +252,36 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun ListaStacji(onEdytuj: (Stacja) -> Unit, onUsun: (Stacja) -> Unit) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(magazyn.stacje, key = { it.id }) { s ->
-                WierszStacji(
-                    s,
-                    opis = if (magazyn.wLosowaniu(s.id)) "w losowaniu" else "poza losowaniem"
+                val gra = s.nazwa == stacja
+                Card(
+                    colors = if (gra) CardDefaults.cardColors(containerColor = ZIELONY) else CardDefaults.cardColors(),
+                    modifier = Modifier.fillMaxWidth().clickable { graj(s) }
                 ) {
-                    StartStop(s)
-                    IconButton(onClick = { onEdytuj(s) }) { Icon(Icons.Filled.Edit, "Edytuj") }
-                    IconButton(onClick = { onUsun(s) }) { Icon(Icons.Filled.Delete, "Usuń") }
+                    Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(s.nazwa, style = MaterialTheme.typography.titleMedium)
+                            Text(if (magazyn.wLosowaniu(s.id)) "w losowaniu" else "poza losowaniem",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (gra) IconButton(onClick = { stop() }) {
+                            Box(Modifier.size(16.dp).background(MaterialTheme.colorScheme.onSurface))
+                        } else IconButton(onClick = { graj(s) }) { Icon(Icons.Filled.PlayArrow, "Start") }
+                        IconButton(onClick = { onEdytuj(s) }) { Icon(Icons.Filled.Edit, "Edytuj") }
+                        IconButton(onClick = { onUsun(s) }) { Icon(Icons.Filled.Delete, "Usuń") }
+                    }
                 }
             }
-            item { Ustawienia() }
+            item { UstawieniaOgolne() }
             item { Spacer(Modifier.height(80.dp)) }
         }
     }
 
     @Composable
-    private fun WierszStacji(s: Stacja, opis: String, akcje: @Composable () -> Unit) {
-        val gra = s.nazwa == stacja
-        Card(
-            colors = if (gra) CardDefaults.cardColors(containerColor = ZIELONY) else CardDefaults.cardColors(),
-            modifier = Modifier.fillMaxWidth().clickable { graj(s) }
-        ) {
-            Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(s.nazwa, style = MaterialTheme.typography.titleMedium)
-                    Text(opis, style = MaterialTheme.typography.bodySmall)
-                }
-                akcje()
-            }
-        }
-    }
-
-    @Composable
-    private fun StartStop(s: Stacja) {
-        if (s.nazwa == stacja) {
-            IconButton(onClick = { stop() }) {
-                Box(Modifier.size(16.dp).background(MaterialTheme.colorScheme.onSurface))
-            }
-        } else {
-            IconButton(onClick = { graj(s) }) { Icon(Icons.Filled.PlayArrow, "Start") }
-        }
-    }
-
-    @Composable
-    private fun Ustawienia() {
+    private fun UstawieniaOgolne() {
         Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             HorizontalDivider()
             Text("Ustawienia", style = MaterialTheme.typography.titleMedium)
@@ -316,35 +327,115 @@ class MainActivity : ComponentActivity() {
     // ---------- Zakładka 2: losowanie ----------
 
     @Composable
-    private fun ListaLosowania() {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = !trybAuto, onClick = { ustawTryb(false) },
-                        label = { Text("Raz dziennie") })
-                    FilterChip(selected = trybAuto, onClick = { ustawTryb(true) },
-                        label = { Text("Auto: zmiana co ${AUTO_CZAS_S / 60} min") })
+    private fun Pigulka(tekst: String, wyrozniona: Boolean = false, onClick: () -> Unit) {
+        Surface(
+            onClick = onClick,
+            shape = RoundedCornerShape(50),
+            color = if (wyrozniona) ZIELONY else MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = if (wyrozniona) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
+        ) {
+            Text(tekst, fontSize = 16.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+        }
+    }
+
+    @OptIn(ExperimentalLayoutApi::class)
+    @Composable
+    private fun ZakladkaLosowania(onSzansa: (Stacja) -> Unit, onDodaj: () -> Unit) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("Stacje w losowaniu (dotknij nazwy, żeby zmienić szansę):",
+                style = MaterialTheme.typography.bodySmall)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                magazyn.losowanie.forEach { los ->
+                    val s = magazyn.stacja(los.id) ?: return@forEach
+                    Pigulka(s.nazwa, wyrozniona = s.nazwa == stacja) { onSzansa(s) }
                 }
+                Pigulka("  +  ", onClick = onDodaj)
             }
-            item {
-                Text("Stacje, z których losowany jest kanał. Waga zmienia szansę wylosowania. " +
-                    "Przycisk + dodaje stację z zakładki Stacje.", style = MaterialTheme.typography.bodySmall)
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
+            Text("Ustawienia", style = MaterialTheme.typography.titleMedium)
+            Opcja("Losowanie raz dziennie", !trybAuto) { ustawTryb(false) }
+            Opcja("Losowanie co X minut", trybAuto) { ustawTryb(true) }
+            if (trybAuto) Column(Modifier.padding(start = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                var tekst by remember { mutableStateOf(autoLimit.toString()) }
+                OutlinedTextField(
+                    value = tekst,
+                    onValueChange = { t ->
+                        tekst = t.filter { it.isDigit() }.take(4)
+                        tekst.toIntOrNull()?.takeIf { it > 0 }?.let {
+                            autoLimit = it
+                            StanLosowania.ustawAutoMin(this@MainActivity, it)
+                        }
+                    },
+                    label = { Text("Liczba minut") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.width(160.dp)
+                )
+                Opcja("Czas względny (minuty RMF24 się nie liczą)", wzgledny) { ustawWzgledny(true) }
+                Opcja("Czas bezwzględny (liczy się też RMF24)", !wzgledny) { ustawWzgledny(false) }
             }
-            if (magazyn.losowanie.isEmpty()) item { Text("Brak stacji w losowaniu.") }
-            items(magazyn.losowanie, key = { it.id }) { los ->
-                val s = magazyn.stacja(los.id) ?: return@items
-                WierszStacji(s, opis = "waga ${los.waga}, szansa " +
-                    String.format(Locale("pl"), "%.1f%%", magazyn.procent(los))) {
-                    TextButton(onClick = { magazyn.ustawWage(los.id, los.waga - 1) }) { Text("−") }
-                    TextButton(onClick = { magazyn.ustawWage(los.id, los.waga + 1) }) { Text("+") }
-                    IconButton(onClick = { magazyn.usunZLosowania(los.id) }) {
-                        Icon(Icons.Filled.Close, "Usuń z losowania")
+            Spacer(Modifier.height(40.dp))
+        }
+    }
+
+    @Composable
+    private fun Opcja(tekst: String, wybrana: Boolean, onClick: () -> Unit) {
+        Row(
+            Modifier.fillMaxWidth().selectable(selected = wybrana, onClick = onClick),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RadioButton(selected = wybrana, onClick = onClick)
+            Text(tekst)
+        }
+    }
+
+    @Composable
+    private fun OknoSzansy(s: Stacja, zamknij: () -> Unit) {
+        val p = magazyn.procent(s.id)
+        var tekst by remember { mutableStateOf("") }
+        val jedyna = magazyn.losowanie.size < 2
+        AlertDialog(
+            onDismissRequest = zamknij,
+            title = { Text(s.nazwa) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Szansa wylosowania: ${procentTekst(p)}", style = MaterialTheme.typography.titleMedium)
+                    if (jedyna) Text("To jedyna stacja w losowaniu.")
+                    else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { magazyn.ustawProcent(s.id, p - 1) }) { Text("− 1%") }
+                            OutlinedButton(onClick = { magazyn.ustawProcent(s.id, p + 1) }) { Text("+ 1%") }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = tekst, onValueChange = { tekst = it.replace(',', '.') },
+                                label = { Text("Wpisz %") }, singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.width(120.dp)
+                            )
+                            TextButton(onClick = {
+                                tekst.toDoubleOrNull()?.let { magazyn.ustawProcent(s.id, it) }
+                                tekst = ""
+                            }) { Text("Ustaw") }
+                        }
+                        Text("Pozostałe stacje zachowują swoje proporcje.",
+                            style = MaterialTheme.typography.bodySmall)
                     }
                 }
+            },
+            confirmButton = { TextButton(onClick = zamknij) { Text("Gotowe") } },
+            dismissButton = {
+                TextButton(onClick = { magazyn.usunZLosowania(s.id); zamknij() }) { Text("Usuń z losowania") }
             }
-            item { Spacer(Modifier.height(80.dp)) }
-        }
+        )
     }
 
     @Composable
@@ -406,6 +497,7 @@ class MainActivity : ComponentActivity() {
         stacja = if (p.mediaItemCount > 0 && p.playbackState != Player.STATE_IDLE)
             p.currentMediaItem?.mediaMetadata?.station?.toString() ?: "" else ""
         utwor = p.mediaMetadata.title?.toString().orEmpty()
+        graTeraz = p.playWhenReady
         if (stacja.isNotEmpty()) status = when (p.playbackState) {
             Player.STATE_BUFFERING -> "Łączę..."
             Player.STATE_READY -> if (p.isPlaying) "Gra." else "Pauza."
@@ -438,6 +530,16 @@ class MainActivity : ComponentActivity() {
     private fun ustawTryb(auto: Boolean) {
         trybAuto = auto
         StanLosowania.ustawAuto(this, auto)
+    }
+
+    private fun pauza() {
+        val c = kontroler ?: return
+        if (c.playWhenReady) c.pause() else c.play()
+    }
+
+    private fun ustawWzgledny(w: Boolean) {
+        wzgledny = w
+        StanLosowania.ustawWzgledny(this, w)
     }
 
     private fun stop() {

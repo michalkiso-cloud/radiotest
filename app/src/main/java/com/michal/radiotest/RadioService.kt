@@ -23,7 +23,6 @@ import java.security.SecureRandom
 
 const val KOMENDA_GRAJ = "graj"          // argument "id" = id stacji (tryb ręczny)
 const val KOMENDA_LOSUJ = "losuj"        // gra stację z losowania (dzienny albo auto)
-const val AUTO_CZAS_S = 3600             // tryb auto: zmiana po tylu sekundach słuchania
 private const val TIK_S = 5
 private val WZNOW_ODSTEPY_S = longArrayOf(2, 5, 15, 60, 120)
 
@@ -33,6 +32,12 @@ object StanLosowania {
     fun trybAuto(c: Context) = prefs(c).getBoolean("auto", false)
     fun ustawAuto(c: Context, auto: Boolean) = prefs(c).edit().putBoolean("auto", auto).apply()
     fun autoSek(c: Context) = prefs(c).getInt("auto_sek", 0)
+    /** Tryb auto: zmiana stacji po tylu minutach. */
+    fun autoMin(c: Context) = prefs(c).getInt("auto_min", 60)
+    fun ustawAutoMin(c: Context, m: Int) = prefs(c).edit().putInt("auto_min", m.coerceIn(1, 1440)).apply()
+    /** true = czas względny (nie liczą się minuty RMF24), false = bezwzględny (liczy się też RMF24). */
+    fun wzgledny(c: Context) = prefs(c).getBoolean("wzgledny", true)
+    fun ustawWzgledny(c: Context, w: Boolean) = prefs(c).edit().putBoolean("wzgledny", w).apply()
     fun losujeTeraz(c: Context) = prefs(c).getBoolean("aktywne", false)
 }
 
@@ -118,7 +123,7 @@ class RadioService : MediaSessionService() {
         val s: Stacja? = if (StanLosowania.trybAuto(this)) {
             val id = prefs.getString("auto_id", null)
             val biezaca = id?.takeIf { m.wLosowaniu(it) }?.let { m.stacja(it) }
-            if (biezaca != null && StanLosowania.autoSek(this) < AUTO_CZAS_S) biezaca
+            if (biezaca != null && StanLosowania.autoSek(this) < StanLosowania.autoMin(this) * 60) biezaca
             else wylosuj(m, id)?.also { e.putString("auto_id", it.id).putInt("auto_sek", 0) }
         } else {
             val dzis = LocalDate.now().toString()
@@ -139,8 +144,9 @@ class RadioService : MediaSessionService() {
             handler.postDelayed(this, TIK_S * 1000L)
             if (!StanLosowania.losujeTeraz(this@RadioService) ||
                 !StanLosowania.trybAuto(this@RadioService) || !player.isPlaying) return
+            // RMF24 (etap 3): w czasie względnym minuty RMF24 nie będą się liczyć
             val sek = StanLosowania.autoSek(this@RadioService) + TIK_S
-            if (sek >= AUTO_CZAS_S) {
+            if (sek >= StanLosowania.autoMin(this@RadioService) * 60) {
                 val m = Magazyn(this@RadioService)
                 val nowa = wylosuj(m, prefs.getString("auto_id", null))
                 prefs.edit().putInt("auto_sek", 0).putString("auto_id", nowa?.id).apply()
