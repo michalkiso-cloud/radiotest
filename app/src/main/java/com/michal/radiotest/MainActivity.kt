@@ -50,6 +50,15 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.LaunchedEffect
+import androidx.media3.session.SessionCommand
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -80,6 +89,10 @@ class MainActivity : ComponentActivity() {
     private var status by mutableStateOf("Wybierz stację.")
     private var kluczDi by mutableStateOf("")
     private var bateriaOk by mutableStateOf(false)
+    private var motyw by mutableIntStateOf(0)        // 0 system, 1 jasny, 2 ciemny
+    private var trybAuto by mutableStateOf(false)
+    private var autoMin by mutableIntStateOf(0)
+    private var losujeTeraz by mutableStateOf(false)
     private val zgodaPowiadomienia =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -92,8 +105,11 @@ class MainActivity : ComponentActivity() {
             zgodaPowiadomienia.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         kluczDi = prefs.getString("klucz_di", "") ?: ""
+        motyw = prefs.getInt("motyw", 0)
+        trybAuto = StanLosowania.trybAuto(this)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            val ciemny = when (motyw) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
+            MaterialTheme(colorScheme = if (ciemny) darkColorScheme() else lightColorScheme()) {
                 Surface(Modifier.fillMaxSize()) { Ekran() }
             }
         }
@@ -148,15 +164,57 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun WyborMotywu() {
+        var otwarte by remember { mutableStateOf(false) }
+        Box {
+            TextButton(onClick = { otwarte = true }) {
+                Text("◐", style = MaterialTheme.typography.headlineSmall)
+            }
+            DropdownMenu(expanded = otwarte, onDismissRequest = { otwarte = false }) {
+                listOf("Systemowy", "Jasny", "Ciemny").forEachIndexed { i, n ->
+                    DropdownMenuItem(
+                        text = { Text((if (motyw == i) "✓ " else "    ") + n) },
+                        onClick = {
+                            motyw = i
+                            prefs.edit().putInt("motyw", i).apply()
+                            otwarte = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    @Composable
     private fun Naglowek() {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+        LaunchedEffect(Unit) {
+            while (true) {
+                autoMin = StanLosowania.autoSek(this@MainActivity) / 60
+                losujeTeraz = StanLosowania.losujeTeraz(this@MainActivity)
+                delay(5_000)
+            }
+        }
+        val ciemny = MaterialTheme.colorScheme.background.red < 0.5f
+        Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Radio", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                WyborMotywu()
+            }
             Text(if (stacja.isEmpty()) "Nic nie gra" else "Gra: $stacja",
                 style = MaterialTheme.typography.titleMedium)
-            if (utwor.isNotEmpty()) Text(utwor, color = Color(0xFFFFEB3B),
+            if (utwor.isNotEmpty()) Text(utwor, color = if (ciemny) Color(0xFFFFEB3B) else Color(0xFF8D6E00),
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(status, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 if (stacja.isNotEmpty()) TextButton(onClick = { stop() }) { Text("Stop") }
+            }
+            if (trybAuto && losujeTeraz && stacja.isNotEmpty()) Text(
+                "Auto: wykorzystane $autoMin min z ${AUTO_CZAS_S / 60}",
+                color = if (ciemny) Color(0xFFF48FB1) else Color(0xFFAD1457),
+                style = MaterialTheme.typography.bodySmall
+            )
+            Button(onClick = { losuj() }, modifier = Modifier.fillMaxWidth().padding(end = 12.dp, top = 4.dp)) {
+                Text(if (trybAuto) "Graj losowo (tryb auto)" else "Graj losowo (stacja dnia)")
             }
         }
     }
@@ -262,6 +320,14 @@ class MainActivity : ComponentActivity() {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !trybAuto, onClick = { ustawTryb(false) },
+                        label = { Text("Raz dziennie") })
+                    FilterChip(selected = trybAuto, onClick = { ustawTryb(true) },
+                        label = { Text("Auto: zmiana co ${AUTO_CZAS_S / 60} min") })
+                }
+            }
+            item {
                 Text("Stacje, z których losowany jest kanał. Waga zmienia szansę wylosowania. " +
                     "Przycisk + dodaje stację z zakładki Stacje.", style = MaterialTheme.typography.bodySmall)
             }
@@ -353,17 +419,25 @@ class MainActivity : ComponentActivity() {
             return
         }
         val c = kontroler ?: run { status = "Odtwarzacz jeszcze się uruchamia..."; return }
-        val item = MediaItem.Builder()
-            .setUri(s.adres.replace(ZNACZNIK_DI, kluczDi.trim()))
-            .setMediaId(s.id)
-            .setMediaMetadata(MediaMetadata.Builder().setStation(s.nazwa).setArtist(s.nazwa).build())
-            .build()
-        c.setMediaItem(item)
-        c.prepare()
-        c.play()
+        c.sendCustomCommand(SessionCommand(KOMENDA_GRAJ, Bundle.EMPTY), Bundle().apply { putString("id", s.id) })
+        losujeTeraz = false
         stacja = s.nazwa
         utwor = ""
         status = "Łączę..."
+    }
+
+    private fun losuj() {
+        if (magazyn.losowanie.isEmpty()) { status = "Dodaj stacje w zakładce Losowanie."; return }
+        val c = kontroler ?: run { status = "Odtwarzacz jeszcze się uruchamia..."; return }
+        c.sendCustomCommand(SessionCommand(KOMENDA_LOSUJ, Bundle.EMPTY), Bundle.EMPTY)
+        losujeTeraz = true
+        utwor = ""
+        status = "Łączę..."
+    }
+
+    private fun ustawTryb(auto: Boolean) {
+        trybAuto = auto
+        StanLosowania.ustawAuto(this, auto)
     }
 
     private fun stop() {
