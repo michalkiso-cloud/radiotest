@@ -50,6 +50,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -165,6 +166,7 @@ class MainActivity : ComponentActivity() {
         ) { pad ->
             Column(Modifier.padding(pad).fillMaxSize()) {
                 Naglowek()
+                HorizontalDivider(thickness = 2.dp, color = MaterialTheme.colorScheme.primary)
                 TabRow(selectedTabIndex = zakladka) {
                     Tab(zakladka == 0, { zakladka = 0 }, text = { Text("Stacje") })
                     Tab(zakladka == 1, { zakladka = 1 }, text = { Text("Losowanie") })
@@ -231,8 +233,8 @@ class MainActivity : ComponentActivity() {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(if (stacja.isEmpty()) "Nic nie gra" else stacja,
-                        style = MaterialTheme.typography.titleMedium)
-                    if (utwor.isNotEmpty()) Text(utwor,
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp))
+                    if (utwor.isNotEmpty()) Text(utwor, fontSize = 17.sp,
                         color = if (ciemny) Color(0xFFFFEB3B) else Color(0xFF8D6E00),
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
@@ -254,11 +256,24 @@ class MainActivity : ComponentActivity() {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { pauza() }, enabled = stacja.isNotEmpty(),
                         modifier = Modifier.weight(1f)) {
-                        Text(if (graTeraz) "❚❚  Pauza" else "▶  Wznów")
+                        if (graTeraz) {
+                            val k = LocalContentColor.current
+                            Box(Modifier.size(width = 4.dp, height = 14.dp).background(k))
+                            Spacer(Modifier.width(4.dp))
+                            Box(Modifier.size(width = 4.dp, height = 14.dp).background(k))
+                            Spacer(Modifier.width(10.dp))
+                            Text("Pauza")
+                        } else {
+                            Icon(Icons.Filled.PlayArrow, null, Modifier.size(20.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Wznów")
+                        }
                     }
                     OutlinedButton(onClick = { stop() }, enabled = stacja.isNotEmpty(),
                         modifier = Modifier.weight(1f)) {
-                        Text("■  Stop")
+                        Box(Modifier.size(14.dp).background(LocalContentColor.current))
+                        Spacer(Modifier.width(10.dp))
+                        Text("Stop")
                     }
                 }
             }
