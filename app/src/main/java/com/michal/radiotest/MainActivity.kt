@@ -66,6 +66,8 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.core.view.WindowCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -141,7 +143,15 @@ class MainActivity : ComponentActivity() {
         playlista = SpotifyUst.wybrana(this)
         setContent {
             val ciemny = when (motyw) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
-            MaterialTheme(colorScheme = if (ciemny) darkColorScheme() else lightColorScheme()) {
+            val schemat = if (ciemny) darkColorScheme() else lightColorScheme()
+            SideEffect {
+                // tryb jasny: ciemne ikony i napisy na pasku stanu
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !ciemny
+                    isAppearanceLightNavigationBars = !ciemny
+                }
+            }
+            MaterialTheme(colorScheme = schemat) {
                 Surface(Modifier.fillMaxSize()) { Ekran() }
             }
         }
@@ -239,11 +249,14 @@ class MainActivity : ComponentActivity() {
                         fontWeight = FontWeight.Bold)
                     if (utwor.isNotEmpty()) Text(utwor, fontSize = 17.sp,
                         fontWeight = if (ciemny) FontWeight.Normal else FontWeight.SemiBold,
-                        color = if (ciemny) Color(0xFFFFEB3B) else Color(0xFFB45309),
+                        color = if (ciemny) Color(0xFFFFEB3B) else MaterialTheme.colorScheme.primary,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 WyborMotywu()
             }
+            if (LogMowy.graRmf.value) Text("Teraz gra RMF24 (mowa)",
+                color = if (ciemny) Color(0xFF81C784) else Color(0xFF2E7D32),
+                fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
             Text(status, style = MaterialTheme.typography.bodySmall)
             if (trybAuto && losujeTeraz && stacja.isNotEmpty()) Text(
                 "Auto: wykorzystane $autoMin min z $autoLimit",
@@ -530,7 +543,7 @@ class MainActivity : ComponentActivity() {
                 style = MaterialTheme.typography.titleSmall
             )
             Text("Próg $PROG_YAMNET, blok $BLOK_S s, potwierdzenie: mowa $POTW_MOWA, muzyka $POTW_MUZYKA. " +
-                "Na razie tylko ocena (bez przełączania).", style = MaterialTheme.typography.bodySmall)
+                "Przy werdykcie MOWA gra RMF24 od początku mowy, potem płynny powrót.", style = MaterialTheme.typography.bodySmall)
             HorizontalDivider()
             LazyColumn(Modifier.fillMaxSize()) {
                 items(LogMowy.wpisy) { w ->

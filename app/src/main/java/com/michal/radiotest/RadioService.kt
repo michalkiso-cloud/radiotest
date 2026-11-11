@@ -25,11 +25,18 @@ import android.util.Log
 import com.google.common.util.concurrent.ListenableFuture
 import java.time.LocalDate
 import java.security.SecureRandom
+import java.util.Locale
 
 const val KOMENDA_GRAJ = "graj"          // argument "id" = id stacji (tryb ręczny)
 const val KOMENDA_LOSUJ = "losuj"        // gra stację z losowania (dzienny albo auto)
 private const val TIK_S = 5
 private val WZNOW_ODSTEPY_S = longArrayOf(2, 5, 15, 60, 120)
+// przełączanie na RMF24 (jak w skrypcie)
+private const val COFNIJ_BLOKOW = 1
+private const val MARGINES_POCZ_S = 4f
+private const val MARGINES_S = 2f
+private const val KONIEC_MOWY_S = 20f
+private const val FADE_S = 1f
 
 /** Stan losowania, wspólny dla usługi i ekranu (SharedPreferences). */
 object StanLosowania {
@@ -67,11 +74,107 @@ class RadioService : MediaSessionService() {
     private var spotify: SpotifyAppRemote? = null
     private var spotifyUtwor = ""
 
-    // Etap 3: nasłuch RMF24 i YAMNet (na razie tylko ocena i log, bez przełączania)
-    private val nasluch by lazy { Nasluch(this) { /* przełączanie: etap 3b */ } }
+    // Etap 3: nasłuch RMF24, YAMNet i przełączanie na RMF24 w czasie mowy
+    private val nasluch by lazy { Nasluch(this) { naBlok(it) } }
+    private val rmf by lazy { OdtwarzaczRmf(nasluch).also { it.naCel = { wrocZRmf() } } }
+    private var trybRmf = false
+    private var powrotUstawiony = false
+    private val bloki = HashMap<Int, Blok>()
+    private var ostatniWerdykt = "?"
+    private var glosnoscGlowna = 1f
 
     private fun nasluchStart() {
-        if (UstMowy.wlaczone(this)) nasluch.start() else nasluch.stop()
+        if (!UstMowy.wlaczone(this)) { nasluch.stop(); return }
+        if (!nasluch.dziala) { bloki.clear(); ostatniWerdykt = "?" }
+        nasluch.start()
+    }
+
+    private fun naBlok(b: Blok) {
+        bloki[b.nr] = b
+        bloki.keys.filter { it < b.nr - 15 }.forEach { bloki.remove(it) }
+        val poprzedni = ostatniWerdykt
+        ostatniWerdykt = b.werdykt
+        if (!player.playWhenReady || player.mediaItemCount == 0) return
+        if (b.werdykt == "MOWA" && poprzedni != "MOWA" && !trybRmf) wejdzNaRmf(b.seriaStart)
+        else if (b.werdykt == "MUZYKA" && poprzedni != "MUZYKA" && trybRmf) ustawPowrot(b.seriaStart)
+    }
+
+    private fun sr() = nasluch.srBufora
+
+    private fun wejdzNaRmf(ks: Int) {
+        val kp = (ks - COFNIJ_BLOKOW).let { if (bloki.containsKey(it)) it else ks }
+        val bazowy = bloki[kp] ?: bloki[ks] ?: return
+        var start = bazowy.ramkaStart
+        for (kk in kp..ks) {
+            val b = bloki[kk] ?: continue
+            val tp = b.pierwMowaS ?: continue
+            start = b.ramkaStart + ((tp - MARGINES_POCZ_S) * sr()).toLong()
+            LogMowy.dodaj(String.format(Locale.US, "Początek mowy w bloku %+d: %.1f s", kk - ks, tp))
+            break
+        }
+        trybRmf = true
+        powrotUstawiony = false
+        LogMowy.graRmf.value = true
+        rmf.start(start)
+        LogMowy.dodaj(String.format(Locale.US, "→ RMF24 (opóźnienie %.0f s)", rmf.opoznienieS()))
+        if (trybSpotify) spotify?.playerApi?.pause()
+        glosnoscGlowna = if (trybSpotify) 0f else player.volume
+        przejscie { t ->
+            rmf.ustawGlosnosc(t)
+            if (!trybSpotify) player.volume = glosnoscGlowna * (1 - t)
+        }
+    }
+
+    private fun ustawPowrot(ks: Int) {
+        val b = bloki[ks] ?: return
+        val ost = b.ostMowaS
+        val pop = bloki[ks - 1]
+        val koniec: Float = when {
+            ost != null -> minOf(KONIEC_MOWY_S, ost + MARGINES_S)
+            pop?.ostMowaS != null ->
+                ((pop.ramkaStart - b.ramkaStart) / sr().toFloat()) + pop.ostMowaS + MARGINES_S
+            else -> KONIEC_MOWY_S
+        }
+        val cel = b.ramkaStart + (koniec * sr()).toLong()
+        powrotUstawiony = true
+        LogMowy.dodaj(String.format(Locale.US, "Koniec mowy: powrót %+.1f s od początku bloku muzyki", koniec))
+        if (rmf.pozycja >= cel) wrocZRmf() else rmf.cel = cel
+    }
+
+    private fun wrocZRmf() {
+        if (!trybRmf) return
+        trybRmf = false
+        LogMowy.dodaj("← powrót do radia głównego")
+        if (trybSpotify) spotify?.playerApi?.resume()
+        przejscie(koniec = { rmf.stop(); LogMowy.graRmf.value = false }) { t ->
+            rmf.ustawGlosnosc(1 - t)
+            if (!trybSpotify) player.volume = t
+        }
+    }
+
+    /** Przerywa RMF24 bez przejścia (pauza, stop, zmiana stacji). */
+    private fun przerwijRmf() {
+        handler.removeCallbacks(krokPrzejscia)
+        rmf.stop()
+        if (trybRmf && trybSpotify) spotify?.playerApi?.resume()
+        trybRmf = false
+        LogMowy.graRmf.value = false
+        if (!trybSpotify) player.volume = 1f
+    }
+
+    private var krokPrzejscia = Runnable {}
+    private fun przejscie(koniec: () -> Unit = {}, krok: (Float) -> Unit) {
+        handler.removeCallbacks(krokPrzejscia)
+        val kroki = 20
+        var i = 0
+        krokPrzejscia = object : Runnable {
+            override fun run() {
+                i++
+                krok(i / kroki.toFloat())
+                if (i < kroki) handler.postDelayed(this, (FADE_S * 1000 / kroki).toLong()) else koniec()
+            }
+        }
+        handler.post(krokPrzejscia)
     }
 
     override fun onCreate() {
@@ -87,11 +190,16 @@ class RadioService : MediaSessionService() {
                 if (isPlaying) proby = 0
             }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (!playWhenReady) {
+                    // pauza (także po odłączeniu słuchawek): bez RMF24 i bez nasłuchu
+                    przerwijRmf()
+                    nasluch.stop()
+                } else if (player.mediaItemCount > 0) nasluchStart()
                 if (!trybSpotify) return
                 spotify?.playerApi?.let { if (playWhenReady) it.resume() else it.pause() }
             }
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_IDLE) nasluch.stop()
+                if (state == Player.STATE_IDLE) { przerwijRmf(); nasluch.stop() }
                 if (state == Player.STATE_IDLE && trybSpotify) zakonczSpotify()
             }
         })
@@ -168,6 +276,8 @@ class RadioService : MediaSessionService() {
             handler.postDelayed(this, TIK_S * 1000L)
             if (!StanLosowania.losujeTeraz(this@RadioService) ||
                 !StanLosowania.trybAuto(this@RadioService) || !player.isPlaying) return
+            // czas względny: minuty, gdy gra RMF24, się nie liczą
+            if (trybRmf && StanLosowania.wzgledny(this@RadioService)) return
             // RMF24 (etap 3): w czasie względnym minuty RMF24 nie będą się liczyć
             val sek = StanLosowania.autoSek(this@RadioService) + TIK_S
             if (sek >= StanLosowania.autoMin(this@RadioService) * 60) {
@@ -186,6 +296,7 @@ class RadioService : MediaSessionService() {
     // ---------- Odtwarzanie ----------
 
     private fun graj(s: Stacja) {
+        przerwijRmf()
         if (s.adres == SPOTIFY_ADRES) { grajSpotify(s); return }
         if (trybSpotify) zakonczSpotify()
         player.setAudioAttributes(atrybuty, true)
@@ -292,6 +403,7 @@ class RadioService : MediaSessionService() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         if (trybSpotify) zakonczSpotify()
+        rmf.stop()
         nasluch.zakoncz()
         sesja?.run { player.release(); release() }
         sesja = null

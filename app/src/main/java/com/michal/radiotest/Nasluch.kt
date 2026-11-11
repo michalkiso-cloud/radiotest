@@ -40,14 +40,21 @@ private const val IDX_MUZYKA = 132  // YAMNet: "Music"
 /** Wynik analizy jednego bloku RMF24. */
 data class Blok(
     val nr: Int, val start: Long, val mowa: Float, val muzyka: Float,
-    val pierwMowaS: Float?, val ostMowaS: Float?, val werdykt: String
+    val pierwMowaS: Float?, val ostMowaS: Float?, val werdykt: String,
+    val jestMowa: Boolean, val seriaStart: Int, val seriaN: Int,
+    /** pierwsza ramka (próbka na kanał) bloku w buforze RMF24 */
+    val ramkaStart: Long, val dlS: Float
 )
+
+const val BUFOR_RMF_S = 180
 
 /** Log wykrywania mowy widoczny w aplikacji. */
 object LogMowy {
     val wpisy = mutableStateListOf<String>()
     val werdykt = mutableStateOf("?")
     val aktywny = mutableStateOf(false)
+    /** true, gdy zamiast radia głównego gra RMF24 (mowa) */
+    val graRmf = mutableStateOf(false)
     private val glowny = Handler(Looper.getMainLooper())
     private val fmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
@@ -91,6 +98,15 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
     private var wBloku = 0
     private var startBloku = 0L
     private var nrBloku = 0
+    private var ramkaBloku = 0L
+
+    // bufor RMF24 w oryginalnej jakości (do odtwarzania z opóźnieniem)
+    private val zamek = Object()
+    private var bufor = ShortArray(0)
+    @Volatile var srBufora = 44100; private set
+    @Volatile var kanalyBufora = 2; private set
+    @Volatile private var ramkiZapisane = 0L
+    private var seriaStart = 0
 
     // werdykt
     private var seriaMowa: Boolean? = null
@@ -99,12 +115,21 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
 
     private val tee = TeeAudioProcessor(object : TeeAudioProcessor.AudioBufferSink {
         override fun flush(sampleRateHz: Int, channelCount: Int, encoding: Int) {
-            srWe = sampleRateHz
-            kanaly = channelCount
+            if (sampleRateHz != srWe || channelCount != kanaly || bufor.isEmpty()) {
+                synchronized(zamek) {
+                    srWe = sampleRateHz
+                    kanaly = channelCount
+                    srBufora = sampleRateHz
+                    kanalyBufora = channelCount
+                    bufor = ShortArray(sampleRateHz * channelCount.coerceAtLeast(1) * BUFOR_RMF_S)
+                }
+            }
         }
 
         override fun handleBuffer(buffer: ByteBuffer) = przyjmij(buffer)
     })
+
+    val dziala get() = player != null
 
     fun start() {
         if (player != null) return
@@ -154,6 +179,7 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
 
     private fun resetuj() {
         wBloku = 0; nWe = 0; nWy = 0; nrBloku = 0
+        synchronized(zamek) { ramkiZapisane = 0 }
         startBloku = System.currentTimeMillis()
         seriaMowa = null; seriaN = 0; werdykt = "?"
         LogMowy.werdykt.value = "?"
@@ -183,9 +209,14 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
         val bb = b.duplicate().order(ByteOrder.LITTLE_ENDIAN)
         val k = kanaly.coerceAtLeast(1)
         val krok = srWe.toDouble() / SR
+        val buf = bufor
         while (bb.remaining() >= 2 * k) {
             var suma = 0f
-            repeat(k) { suma += bb.short / 32768f }
+            if (buf.isNotEmpty()) {
+                var poz = ((ramkiZapisane % (buf.size / k)) * k).toInt()
+                repeat(k) { val v = bb.short; buf[poz++] = v; suma += v / 32768f }
+                ramkiZapisane++
+            } else repeat(k) { suma += bb.short / 32768f }
             val x = suma / k
             // wyjście 16 kHz: próbki między poprzednią a bieżącą (interpolacja liniowa)
             while (nWy * krok <= nWe) {
@@ -199,19 +230,46 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
     }
 
     private fun dodajProbke(v: Float) {
-        if (wBloku == 0) startBloku = System.currentTimeMillis()
+        if (wBloku == 0) { startBloku = System.currentTimeMillis(); ramkaBloku = ramkiZapisane }
         blok[wBloku++] = v
         if (wBloku == blok.size) {
             val gotowy = blok
             val start = startBloku
+            val ramka = ramkaBloku
             val nr = nrBloku++
             blok = FloatArray(BLOK_S * SR)
             wBloku = 0
-            analiza.post { analizuj(gotowy, start, nr) }
+            analiza.post { analizuj(gotowy, start, nr, ramka) }
         }
     }
 
-    private fun analizuj(x: FloatArray, start: Long, nr: Int) {
+    /** Najnowsza zapisana ramka RMF24. */
+    fun ramkaNajnowsza(): Long = ramkiZapisane
+
+    /** Najstarsza ramka jeszcze dostępna w buforze. */
+    fun ramkaNajstarsza(): Long {
+        val dl = if (kanalyBufora > 0 && bufor.isNotEmpty()) bufor.size / kanalyBufora else 0
+        return (ramkiZapisane - dl + srBufora).coerceAtLeast(0)   // 1 s zapasu
+    }
+
+    /** Kopiuje ramki od `od` do `dst`; zwraca liczbę skopiowanych ramek (0, gdy jeszcze ich nie ma). */
+    fun czytaj(od: Long, dst: ShortArray): Int {
+        synchronized(zamek) {
+            val k = kanalyBufora
+            val buf = bufor
+            if (buf.isEmpty() || od >= ramkiZapisane) return 0
+            val dl = buf.size / k
+            val n = minOf((ramkiZapisane - od).toInt(), dst.size / k)
+            var poz = ((od % dl) * k).toInt()
+            for (i in 0 until n * k) {
+                dst[i] = buf[poz++]
+                if (poz >= buf.size) poz = 0
+            }
+            return n
+        }
+    }
+
+    private fun analizuj(x: FloatArray, start: Long, nr: Int, ramka: Long) {
         val m = model ?: return
         val n = dlRamki
         val wej = ByteBuffer.allocateDirect(n * 4).order(ByteOrder.nativeOrder())
@@ -241,11 +299,12 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
         val sm = sumaMowa / ramki
         val smu = sumaMuzyka / ramki
         val jestMowa = sm >= PROG_YAMNET
-        if (jestMowa == seriaMowa) seriaN++ else { seriaMowa = jestMowa; seriaN = 1 }
+        if (jestMowa == seriaMowa) seriaN++ else { seriaMowa = jestMowa; seriaN = 1; seriaStart = nr }
         if (jestMowa && seriaN >= POTW_MOWA) werdykt = "MOWA"
         else if (!jestMowa && seriaN >= POTW_MUZYKA) werdykt = "MUZYKA"
         val w = werdykt
-        val b = Blok(nr, start, sm, smu, pierw, ost, w)
+        val b = Blok(nr, start, sm, smu, pierw, ost, w, jestMowa, seriaStart, seriaN, ramka,
+            x.size / SR.toFloat())
         glowny.post {
             LogMowy.werdykt.value = w
             naBlok(b)
