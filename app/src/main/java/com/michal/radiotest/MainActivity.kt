@@ -247,7 +247,7 @@ class MainActivity : ComponentActivity() {
                     Text(if (stacja.isEmpty()) "Nic nie gra" else stacja,
                         style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
                         fontWeight = FontWeight.Bold)
-                    if (utwor.isNotEmpty()) Text(utwor, fontSize = 17.sp,
+                    if (utwor.isNotEmpty() && !LogMowy.graRmf.value) Text(utwor, fontSize = 17.sp,
                         fontWeight = if (ciemny) FontWeight.Normal else FontWeight.SemiBold,
                         color = if (ciemny) Color(0xFFFFEB3B) else MaterialTheme.colorScheme.primary,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -552,6 +552,8 @@ class MainActivity : ComponentActivity() {
                     UstMowy.ustawMargKon(this@MainActivity, it)
                 }
             }
+            PoleSekund("Czas przejścia (s): RMF24 i zmiana stacji", UstMowy.czasPrzejscia(this@MainActivity),
+                Modifier.fillMaxWidth()) { UstMowy.ustawCzasPrzejscia(this@MainActivity, it) }
             HorizontalDivider()
             LazyColumn(Modifier.fillMaxSize()) {
                 items(LogMowy.wpisy) { w ->

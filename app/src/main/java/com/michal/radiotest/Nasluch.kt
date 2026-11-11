@@ -77,6 +77,9 @@ object UstMowy {
     fun margPocz(c: Context) = p(c).getFloat("marg_pocz", 4f)
     /** Zapas po ostatnim oknie z mową przy powrocie do muzyki (s). */
     fun margKon(c: Context) = p(c).getFloat("marg_kon", 2f)
+    /** Czas płynnego przejścia (RMF24 i zmiana stacji), s. */
+    fun czasPrzejscia(c: Context) = p(c).getFloat("przejscie", 1f)
+    fun ustawCzasPrzejscia(c: Context, v: Float) = p(c).edit().putFloat("przejscie", v.coerceIn(0.2f, 10f)).apply()
     fun ustawMargPocz(c: Context, v: Float) = p(c).edit().putFloat("marg_pocz", v.coerceIn(0f, 20f)).apply()
     fun ustawMargKon(c: Context, v: Float) = p(c).edit().putFloat("marg_kon", v.coerceIn(0f, 20f)).apply()
 }

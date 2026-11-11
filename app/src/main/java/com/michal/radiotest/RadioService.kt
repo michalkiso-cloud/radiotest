@@ -12,8 +12,14 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import android.media.AudioManager
+import androidx.media3.session.CommandButton
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import androidx.media3.session.MediaSession.MediaItemsWithStartPosition
+import com.google.common.collect.ImmutableList
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
@@ -29,12 +35,14 @@ import java.util.Locale
 
 const val KOMENDA_GRAJ = "graj"          // argument "id" = id stacji (tryb ręczny)
 const val KOMENDA_LOSUJ = "losuj"        // gra stację z losowania (dzienny albo auto)
+const val KOMENDA_STOP = "stop"          // przycisk Stop w powiadomieniu
+private const val ID_KORZEN = "korzen"
+private const val ID_LOSUJ = "losuj"
 private const val TIK_S = 5
 private val WZNOW_ODSTEPY_S = longArrayOf(2, 5, 15, 60, 120)
 // przełączanie na RMF24 (jak w skrypcie)
 private const val COFNIJ_BLOKOW = 1
 private const val KONIEC_MOWY_S = 20f
-private const val FADE_S = 1f
 
 /** Stan losowania, wspólny dla usługi i ekranu (SharedPreferences). */
 object StanLosowania {
@@ -52,9 +60,12 @@ object StanLosowania {
 }
 
 /** Odtwarzanie w tle: powiadomienie i sterowanie z ekranu blokady robi Media3. */
-class RadioService : MediaSessionService() {
-    private var sesja: MediaSession? = null
+class RadioService : MediaLibraryService() {
+    private var sesja: MediaLibrarySession? = null
     private lateinit var player: ExoPlayer
+    private var obecna: Stacja? = null
+    /** Nowa stacja ładowana w tle do przenikania. */
+    private var oczekujacy: ExoPlayer? = null
     private val handler = Handler(Looper.getMainLooper())
     private val los = SecureRandom()
     private var proby = 0
@@ -113,6 +124,7 @@ class RadioService : MediaSessionService() {
         trybRmf = true
         powrotUstawiony = false
         LogMowy.graRmf.value = true
+        odswiezOpis()
         rmf.start(start)
         LogMowy.dodaj(String.format(Locale.US, "→ RMF24 (opóźnienie %.0f s)", rmf.opoznienieS()))
         if (trybSpotify) spotify?.playerApi?.pause()
@@ -144,6 +156,7 @@ class RadioService : MediaSessionService() {
         if (!trybRmf) return
         trybRmf = false
         LogMowy.dodaj("← powrót do radia głównego")
+        odswiezOpis()
         if (trybSpotify) spotify?.playerApi?.resume()
         przejscie(koniec = { rmf.stop(); LogMowy.graRmf.value = false }) { t ->
             rmf.ustawGlosnosc(1 - t)
@@ -156,9 +169,11 @@ class RadioService : MediaSessionService() {
         handler.removeCallbacks(krokPrzejscia)
         rmf.stop()
         if (trybRmf && trybSpotify) spotify?.playerApi?.resume()
+        val byl = trybRmf
         trybRmf = false
         LogMowy.graRmf.value = false
         if (!trybSpotify) player.volume = 1f
+        if (byl) odswiezOpis()
     }
 
     private var krokPrzejscia = Runnable {}
@@ -170,68 +185,130 @@ class RadioService : MediaSessionService() {
             override fun run() {
                 i++
                 krok(i / kroki.toFloat())
-                if (i < kroki) handler.postDelayed(this, (FADE_S * 1000 / kroki).toLong()) else koniec()
+                if (i < kroki) handler.postDelayed(this, (UstMowy.czasPrzejscia(this@RadioService) * 1000 / kroki).toLong()) else koniec()
             }
         }
         handler.post(krokPrzejscia)
     }
 
+    private fun nowyPlayer(fokus: Boolean): ExoPlayer = ExoPlayer.Builder(this)
+        .setAudioAttributes(atrybuty, fokus)
+        .setHandleAudioBecomingNoisy(true)
+        .setWakeMode(C.WAKE_MODE_NETWORK)
+        .build()
+
+    private val sluchacz = object : Player.Listener {
+        override fun onPlayerError(error: PlaybackException) {
+            LogMowy.dodaj("Błąd strumienia: ${error.errorCodeName} (próba ${proby + 1})")
+            wznow()
+        }
+        override fun onPlaybackSuppressionReasonChanged(reason: Int) {
+            if (reason != Player.PLAYBACK_SUPPRESSION_REASON_NONE)
+                LogMowy.dodaj("Wstrzymane przez system (powód $reason, np. fokus dźwięku)")
+        }
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) proby = 0
+        }
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            val powod = when (reason) {
+                Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "przycisk"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "inna aplikacja przejęła dźwięk"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "odłączone słuchawki"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "sterowanie zdalne"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "koniec strumienia"
+                else -> "powód $reason"
+            }
+            LogMowy.dodaj((if (playWhenReady) "Gra" else "PAUZA") + ": $powod")
+            handler.removeCallbacks(probaWznowienia)
+            if (!playWhenReady) {
+                // pauza (także po odłączeniu słuchawek): bez RMF24 i bez nasłuchu
+                przerwijRmf()
+                nasluch.stop()
+                if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS) {
+                    probyFokus = 0
+                    handler.postDelayed(probaWznowienia, 3000)
+                }
+            } else if (player.mediaItemCount > 0) nasluchStart()
+            if (!trybSpotify) return
+            spotify?.playerApi?.let { if (playWhenReady) it.resume() else it.pause() }
+        }
+        override fun onPlaybackStateChanged(state: Int) {
+            if (state == Player.STATE_IDLE) { przerwijRmf(); nasluch.stop() }
+            if (state == Player.STATE_IDLE && trybSpotify) zakonczSpotify()
+        }
+    }
+
+    /** Po przejęciu dźwięku przez inną aplikację (np. dźwięk powiadomienia) wznawia, gdy ona skończy. */
+    private var probyFokus = 0
+    private val probaWznowienia = object : Runnable {
+        override fun run() {
+            if (player.playWhenReady || player.mediaItemCount == 0) return
+            val am = getSystemService(AudioManager::class.java)
+            val rozmowa = am.mode == AudioManager.MODE_IN_CALL || am.mode == AudioManager.MODE_IN_COMMUNICATION
+                || am.mode == AudioManager.MODE_RINGTONE
+            if (!rozmowa && !am.isMusicActive) {
+                LogMowy.dodaj("Inna aplikacja skończyła, wznawiam radio")
+                player.play()
+            } else if (++probyFokus < 24) handler.postDelayed(this, 5000)
+            else LogMowy.dodaj("Dźwięk zajęty dłużej niż 2 min, zostaje pauza")
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
-        player = ExoPlayer.Builder(this)
-            .setAudioAttributes(atrybuty, true)
-            .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(C.WAKE_MODE_NETWORK)
+        player = nowyPlayer(true)
+        player.addListener(sluchacz)
+        val stop = CommandButton.Builder()
+            .setDisplayName("Stop")
+            .setIconResId(R.drawable.ic_stop)
+            .setSessionCommand(SessionCommand(KOMENDA_STOP, Bundle.EMPTY))
             .build()
-        player.addListener(object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) {
-                LogMowy.dodaj("Błąd strumienia: ${error.errorCodeName} (próba ${proby + 1})")
-                wznow()
-            }
-            override fun onPlaybackSuppressionReasonChanged(reason: Int) {
-                if (reason != Player.PLAYBACK_SUPPRESSION_REASON_NONE)
-                    LogMowy.dodaj("Wstrzymane przez system (powód $reason, np. fokus dźwięku)")
-            }
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) proby = 0
-            }
-            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                val powod = when (reason) {
-                    Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "przycisk"
-                    Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "inna aplikacja przejęła dźwięk"
-                    Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "odłączone słuchawki"
-                    Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "sterowanie zdalne"
-                    Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "koniec strumienia"
-                    else -> "powód $reason"
-                }
-                LogMowy.dodaj((if (playWhenReady) "Gra" else "PAUZA") + ": $powod")
-                if (!playWhenReady) {
-                    // pauza (także po odłączeniu słuchawek): bez RMF24 i bez nasłuchu
-                    przerwijRmf()
-                    nasluch.stop()
-                } else if (player.mediaItemCount > 0) nasluchStart()
-                if (!trybSpotify) return
-                spotify?.playerApi?.let { if (playWhenReady) it.resume() else it.pause() }
-            }
-            override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_IDLE) { przerwijRmf(); nasluch.stop() }
-                if (state == Player.STATE_IDLE && trybSpotify) zakonczSpotify()
-            }
-        })
-        sesja = MediaSession.Builder(this, player).setCallback(Komendy()).build()
+        sesja = MediaLibrarySession.Builder(this, player, Komendy())
+            .setCustomLayout(ImmutableList.of(stop))
+            .build()
         handler.postDelayed(tik, TIK_S * 1000L)
     }
 
-    private inner class Komendy : MediaSession.Callback {
+    // ---------- Sesja: aplikacja, powiadomienie, Android Auto ----------
+
+    private fun elementBiblioteki(id: String, tytul: String, podtytul: String?) = MediaItem.Builder()
+        .setMediaId(id)
+        .setMediaMetadata(
+            MediaMetadata.Builder().setTitle(tytul).setSubtitle(podtytul).setArtist(podtytul)
+                .setIsBrowsable(false).setIsPlayable(true)
+                .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION).build()
+        ).build()
+
+    private fun listaAuta(): List<MediaItem> {
+        val m = Magazyn(this)
+        val tryb = if (StanLosowania.trybAuto(this)) "tryb auto" else "stacja dnia"
+        return listOf(elementBiblioteki(ID_LOSUJ, "🎲 Graj losowo", tryb)) +
+            m.stacje.map { elementBiblioteki(it.id, it.nazwa, if (m.wLosowaniu(it.id)) "w losowaniu" else null) }
+    }
+
+    /** Zastępczy element (cisza), dopóki właściwa stacja się nie uruchomi. */
+    private fun zastepczy(id: String) = MediaItem.Builder()
+        .setUri(Uri.fromFile(plikCiszy(this))).setMediaId(id).build()
+
+    private inner class Komendy : MediaLibrarySession.Callback {
         override fun onConnect(
             session: MediaSession, controller: MediaSession.ControllerInfo
         ): MediaSession.ConnectionResult {
-            val k = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+            val k = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
                 .add(SessionCommand(KOMENDA_GRAJ, Bundle.EMPTY))
                 .add(SessionCommand(KOMENDA_LOSUJ, Bundle.EMPTY))
+                .add(SessionCommand(KOMENDA_STOP, Bundle.EMPTY))
                 .build()
+            // radio na żywo: bez przewijania (znika pasek czasu --:--) i bez poprzedni/następny
+            val p = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
+                .removeAll(
+                    Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_SEEK_BACK,
+                    Player.COMMAND_SEEK_FORWARD, Player.COMMAND_SEEK_TO_PREVIOUS,
+                    Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM, Player.COMMAND_SEEK_TO_NEXT,
+                    Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM
+                ).build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                .setAvailableSessionCommands(k).build()
+                .setAvailableSessionCommands(k).setAvailablePlayerCommands(p).build()
         }
 
         override fun onCustomCommand(
@@ -244,9 +321,60 @@ class RadioService : MediaSessionService() {
                     Magazyn(this@RadioService).stacja(args.getString("id") ?: "")?.let { graj(it) }
                 }
                 KOMENDA_LOSUJ -> losuj()
+                KOMENDA_STOP -> { player.stop(); player.clearMediaItems(); obecna = null }
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
+
+        override fun onGetLibraryRoot(
+            session: MediaLibrarySession, browser: MediaSession.ControllerInfo,
+            params: MediaLibraryService.LibraryParams?
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            val korzen = MediaItem.Builder().setMediaId(ID_KORZEN).setMediaMetadata(
+                MediaMetadata.Builder().setTitle("Radio").setIsBrowsable(true).setIsPlayable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_RADIO_STATIONS).build()
+            ).build()
+            return Futures.immediateFuture(LibraryResult.ofItem(korzen, params))
+        }
+
+        override fun onGetChildren(
+            session: MediaLibrarySession, browser: MediaSession.ControllerInfo, parentId: String,
+            page: Int, pageSize: Int, params: MediaLibraryService.LibraryParams?
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            val lista = if (parentId == ID_KORZEN) listaAuta() else emptyList()
+            return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.copyOf(lista), params))
+        }
+
+        override fun onGetItem(
+            session: MediaLibrarySession, browser: MediaSession.ControllerInfo, mediaId: String
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            val e = listaAuta().firstOrNull { it.mediaId == mediaId }
+                ?: return Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
+            return Futures.immediateFuture(LibraryResult.ofItem(e, null))
+        }
+
+        /** Wybór w Android Auto: uruchamiamy stację po swojemu, a sesji oddajemy element zastępczy. */
+        override fun onSetMediaItems(
+            mediaSession: MediaSession, controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>, startIndex: Int, startPositionMs: Long
+        ): ListenableFuture<MediaItemsWithStartPosition> {
+            val id = mediaItems.firstOrNull()?.mediaId ?: ID_LOSUJ
+            handler.post { uruchomZBiblioteki(id) }
+            return Futures.immediateFuture(MediaItemsWithStartPosition(listOf(zastepczy(id)), 0, C.TIME_UNSET))
+        }
+
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession, controller: MediaSession.ControllerInfo
+        ): ListenableFuture<MediaItemsWithStartPosition> {
+            handler.post { uruchomZBiblioteki(ID_LOSUJ) }
+            return Futures.immediateFuture(MediaItemsWithStartPosition(listOf(zastepczy(ID_LOSUJ)), 0, C.TIME_UNSET))
+        }
+    }
+
+    private fun uruchomZBiblioteki(id: String) {
+        if (id == ID_LOSUJ) { losuj(); return }
+        prefs.edit().putBoolean("aktywne", false).apply()
+        Magazyn(this).stacja(id)?.let { graj(it) } ?: losuj()
     }
 
     // ---------- Losowanie ----------
@@ -305,8 +433,35 @@ class RadioService : MediaSessionService() {
                 val e = prefs.edit().putInt("auto_sek", sek)
                 val teraz = System.currentTimeMillis()
                 if (teraz - ostatniZapis > 30_000) { e.commit(); ostatniZapis = teraz } else e.apply()
+                if (sek % 60 < TIK_S) odswiezOpis()
             }
         }
+    }
+
+    // ---------- Opis w powiadomieniu ----------
+
+    /** Tytuł i podpis bieżącej stacji: „Teraz gra RMF24” w czasie mowy, linia trybu auto. */
+    private fun opis(s: Stacja): MediaMetadata {
+        val auto = StanLosowania.losujeTeraz(this) && StanLosowania.trybAuto(this)
+        val linia = if (auto) "${s.nazwa} · Auto: wykorzystane ${StanLosowania.autoSek(this) / 60} " +
+            "z ${StanLosowania.autoMin(this)} min" else s.nazwa
+        val tytul = when {
+            trybRmf -> "Teraz gra RMF24"
+            trybSpotify -> spotifyUtwor.ifEmpty { null }
+            else -> null      // tytuł utworu ze strumienia (ICY)
+        }
+        return MediaMetadata.Builder().setStation(s.nazwa).setArtist(linia).setTitle(tytul)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION).build()
+    }
+
+    private fun odswiezOpis() {
+        val s = obecna ?: return
+        val item = player.currentMediaItem ?: return
+        if (item.mediaId != s.id) return
+        val nowy = opis(s)
+        val stary = item.mediaMetadata
+        if (stary.artist == nowy.artist && stary.title == nowy.title) return
+        player.replaceMediaItem(player.currentMediaItemIndex, item.buildUpon().setMediaMetadata(nowy).build())
     }
 
     // ---------- Odtwarzanie ----------
@@ -314,21 +469,92 @@ class RadioService : MediaSessionService() {
     private fun graj(s: Stacja) {
         LogMowy.dodaj("Start stacji: ${s.nazwa}")
         przerwijRmf()
+        anulujPrzenikanie()
+        val poprzednia = obecna
+        obecna = s
         if (s.adres == SPOTIFY_ADRES) { grajSpotify(s); return }
+        val bylSpotify = trybSpotify
         if (trybSpotify) zakonczSpotify()
-        player.setAudioAttributes(atrybuty, true)
-        player.volume = 1f
         val klucz = getSharedPreferences("ustawienia", MODE_PRIVATE).getString("klucz_di", "") ?: ""
         val item = MediaItem.Builder()
             .setUri(s.adres.replace(ZNACZNIK_DI, klucz.trim()))
             .setMediaId(s.id)
-            .setMediaMetadata(MediaMetadata.Builder().setStation(s.nazwa).setArtist(s.nazwa).build())
+            .setMediaMetadata(opis(s))
             .build()
         proby = 0
         handler.removeCallbacks(ponow)
+        // przenikanie: tylko radio → radio, gdy coś gra; DI.FM → DI.FM nie (jeden strumień naraz)
+        val diFm = { a: String? -> a?.contains("di.fm") == true }
+        val moznaPrzenikac = !bylSpotify && player.isPlaying && poprzednia != null &&
+            !(diFm(poprzednia.adres) && diFm(s.adres))
+        if (moznaPrzenikac) { przenikaj(item); return }
+        player.setAudioAttributes(atrybuty, true)
+        player.volume = 1f
+        player.repeatMode = Player.REPEAT_MODE_OFF
         player.setMediaItem(item)
         player.prepare()
         player.play()
+        nasluchStart()
+    }
+
+    private val przekroczenie = Runnable {
+        val n = oczekujacy ?: return@Runnable
+        LogMowy.dodaj("Nowa stacja nie ruszyła w 15 s, przełączam bez przenikania")
+        val item = n.currentMediaItem
+        anulujPrzenikanie()
+        item?.let { player.setMediaItem(it); player.prepare(); player.play() }
+    }
+
+    private fun anulujPrzenikanie() {
+        handler.removeCallbacks(przekroczenie)
+        oczekujacy?.release()
+        oczekujacy = null
+    }
+
+    /** Nowa stacja startuje po cichu w drugim odtwarzaczu; gdy gra, następuje przenikanie. */
+    private fun przenikaj(item: MediaItem) {
+        val nowy = nowyPlayer(false)
+        oczekujacy = nowy
+        nowy.volume = 0f
+        nowy.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isPlaying || oczekujacy !== nowy) return
+                nowy.removeListener(this)
+                zamien(nowy)
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                if (oczekujacy !== nowy) return
+                nowy.removeListener(this)
+                LogMowy.dodaj("Nowa stacja: błąd ${error.errorCodeName}, przełączam bez przenikania")
+                handler.removeCallbacks(przekroczenie)
+                oczekujacy = null
+                nowy.release()
+                player.setMediaItem(item); player.prepare(); player.play()
+            }
+        })
+        nowy.setMediaItem(item)
+        nowy.prepare()
+        nowy.play()
+        handler.postDelayed(przekroczenie, 15_000)
+    }
+
+    private fun zamien(nowy: ExoPlayer) {
+        handler.removeCallbacks(przekroczenie)
+        oczekujacy = null
+        val stary = player
+        stary.removeListener(sluchacz)
+        player = nowy
+        nowy.addListener(sluchacz)
+        sesja?.player = nowy
+        LogMowy.dodaj("Przenikanie stacji")
+        val g = stary.volume
+        przejscie(koniec = {
+            stary.release()
+            nowy.setAudioAttributes(atrybuty, true)
+        }) { t ->
+            stary.volume = g * (1 - t)
+            nowy.volume = t
+        }
         nasluchStart()
     }
 
@@ -338,12 +564,14 @@ class RadioService : MediaSessionService() {
 
     // ---------- Spotify ----------
 
-    private fun elementSpotify(s: Stacja, tytul: String) = MediaItem.Builder()
-        .setUri(Uri.fromFile(plikCiszy(this)))
-        .setMediaId(s.id)
-        .setMediaMetadata(MediaMetadata.Builder().setStation(s.nazwa).setArtist(s.nazwa)
-            .setTitle(tytul.ifEmpty { null }).build())
-        .build()
+    private fun elementSpotify(s: Stacja, tytul: String): MediaItem {
+        spotifyUtwor = tytul
+        return MediaItem.Builder()
+            .setUri(Uri.fromFile(plikCiszy(this)))
+            .setMediaId(s.id)
+            .setMediaMetadata(opis(s))
+            .build()
+    }
 
     private fun grajSpotify(s: Stacja) {
         val pl = SpotifyUst.wybrana(this)
@@ -358,7 +586,8 @@ class RadioService : MediaSessionService() {
         player.setAudioAttributes(atrybuty, false)
         player.volume = 0f
         player.repeatMode = Player.REPEAT_MODE_ONE
-        player.setMediaItem(elementSpotify(s, "Łączę ze Spotify..."))
+        spotifyUtwor = "Łączę ze Spotify..."
+        player.setMediaItem(elementSpotify(s, spotifyUtwor))
         player.prepare()
         player.play()
         nasluchStart()
@@ -381,7 +610,7 @@ class RadioService : MediaSessionService() {
                     val tytul = "${t.artist?.name ?: ""} – ${t.name ?: ""}"
                     if (tytul != spotifyUtwor && trybSpotify) {
                         spotifyUtwor = tytul
-                        player.currentMediaItem?.let { player.replaceMediaItem(0, elementSpotify(s, tytul)) }
+                        odswiezOpis()
                     }
                 }
             }
@@ -421,6 +650,7 @@ class RadioService : MediaSessionService() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         if (trybSpotify) zakonczSpotify()
+        anulujPrzenikanie()
         rmf.stop()
         nasluch.zakoncz()
         sesja?.run { player.release(); release() }
