@@ -28,10 +28,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p sdk
-          gh release download --repo spotify/android-sdk --dir sdk
+          gh release download --repo spotify/android-sdk --dir sdk --pattern '*' || true
+          gh release download --repo spotify/android-sdk --dir sdk --archive zip || true
           ls -la sdk
           for z in sdk/*.zip; do [ -e "$z" ] && unzip -o -q "$z" -d sdk/unz; done
-          AAR=$(find sdk -iname '*app-remote*.aar' | sort | tail -n 1)
+          AAR=$(find sdk -iname '*app-remote*.aar' | sort -V | tail -n 1)
           if [ -z "$AAR" ]; then echo "Nie znaleziono AAR app-remote"; find sdk; exit 1; fi
           echo "Używam: $AAR"
           cp "$AAR" app/libs/
