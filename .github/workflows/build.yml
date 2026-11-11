@@ -1,0 +1,50 @@
+name: Buduj APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Pobierz Spotify App Remote SDK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p sdk
+          gh release download --repo spotify/android-sdk --dir sdk
+          ls -la sdk
+          for z in sdk/*.zip; do [ -e "$z" ] && unzip -o -q "$z" -d sdk/unz; done
+          AAR=$(find sdk -iname '*app-remote*.aar' | sort | tail -n 1)
+          if [ -z "$AAR" ]; then echo "Nie znaleziono AAR app-remote"; find sdk; exit 1; fi
+          echo "Używam: $AAR"
+          cp "$AAR" app/libs/
+
+      - name: Buduj
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Wydanie z APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk RadioTest.apk
+          gh release create "build-${{ github.run_number }}" RadioTest.apk \
+            --title "RadioTest build ${{ github.run_number }}" \
+            --notes "Automatyczna budowa z commita ${{ github.sha }}" \
+            --latest
