@@ -12,8 +12,8 @@ android {
         applicationId = "com.michal.radiotest"
         minSdk = 29
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.8"
+        versionCode = 9
+        versionName = "0.9"
         manifestPlaceholders["redirectSchemeName"] = "radiotest"
         manifestPlaceholders["redirectHostName"] = "callback"
         manifestPlaceholders["redirectPathPattern"] = ".*"
@@ -35,6 +35,9 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+    androidResources {
+        noCompress += "tflite"
+    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -55,6 +58,9 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-session:$media3")
     implementation("com.google.guava:guava:33.3.1-android")
+
+    // YAMNet (wykrywanie mowy) przez LiteRT; model pobierany w GitHub Actions do assets
+    implementation("com.google.ai.edge.litert:litert:1.0.1")
 
     // Spotify App Remote (AAR pobierany w GitHub Actions do app/libs)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))

@@ -170,11 +170,13 @@ class MainActivity : ComponentActivity() {
                 TabRow(selectedTabIndex = zakladka) {
                     Tab(zakladka == 0, { zakladka = 0 }, text = { Text("Stacje") })
                     Tab(zakladka == 1, { zakladka = 1 }, text = { Text("Losowanie") })
+                    Tab(zakladka == 2, { zakladka = 2 }, text = { Text("Mowa") })
                 }
-                if (zakladka == 0) ListaStacji(
-                    onEdytuj = { edycja = it },
-                    onUsun = { doUsuniecia = it }
-                ) else ZakladkaLosowania(onSzansa = { szansa = it }, onDodaj = { wybor = true })
+                when (zakladka) {
+                    0 -> ListaStacji(onEdytuj = { edycja = it }, onUsun = { doUsuniecia = it })
+                    1 -> ZakladkaLosowania(onSzansa = { szansa = it }, onDodaj = { wybor = true })
+                    else -> ZakladkaMowy()
+                }
             }
         }
 
@@ -498,6 +500,38 @@ class MainActivity : ComponentActivity() {
                 Opcja("Czas bezwzględny (liczy się też RMF24)", !wzgledny) { ustawWzgledny(false) }
             }
             Spacer(Modifier.height(40.dp))
+        }
+    }
+
+    @Composable
+    private fun ZakladkaMowy() {
+        var wlaczone by remember { mutableStateOf(UstMowy.wlaczone(this@MainActivity)) }
+        Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clickable {
+                    wlaczone = !wlaczone; UstMowy.ustaw(this@MainActivity, wlaczone)
+                },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = wlaczone, onCheckedChange = {
+                    wlaczone = it; UstMowy.ustaw(this@MainActivity, it)
+                })
+                Text("Wykrywanie mowy w RMF24 (od następnego włączenia stacji)")
+            }
+            Text(
+                (if (LogMowy.aktywny.value) "Nasłuch RMF24 działa" else "Nasłuch wyłączony") +
+                    ", werdykt: ${LogMowy.werdykt.value}",
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text("Próg $PROG_YAMNET, blok $BLOK_S s, potwierdzenie: mowa $POTW_MOWA, muzyka $POTW_MUZYKA. " +
+                "Na razie tylko ocena (bez przełączania).", style = MaterialTheme.typography.bodySmall)
+            HorizontalDivider()
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(LogMowy.wpisy) { w ->
+                    Text(w, fontSize = 12.sp, lineHeight = 15.sp,
+                        color = if (w.contains("| mowa |")) Color(0xFF43A047) else Color.Unspecified)
+                }
+            }
         }
     }
 

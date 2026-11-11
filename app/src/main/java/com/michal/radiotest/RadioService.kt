@@ -67,6 +67,13 @@ class RadioService : MediaSessionService() {
     private var spotify: SpotifyAppRemote? = null
     private var spotifyUtwor = ""
 
+    // Etap 3: nasłuch RMF24 i YAMNet (na razie tylko ocena i log, bez przełączania)
+    private val nasluch by lazy { Nasluch(this) { /* przełączanie: etap 3b */ } }
+
+    private fun nasluchStart() {
+        if (UstMowy.wlaczone(this)) nasluch.start() else nasluch.stop()
+    }
+
     override fun onCreate() {
         super.onCreate()
         player = ExoPlayer.Builder(this)
@@ -84,6 +91,7 @@ class RadioService : MediaSessionService() {
                 spotify?.playerApi?.let { if (playWhenReady) it.resume() else it.pause() }
             }
             override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_IDLE) nasluch.stop()
                 if (state == Player.STATE_IDLE && trybSpotify) zakonczSpotify()
             }
         })
@@ -193,6 +201,7 @@ class RadioService : MediaSessionService() {
         player.setMediaItem(item)
         player.prepare()
         player.play()
+        nasluchStart()
     }
 
     private val ponow = Runnable {
@@ -224,6 +233,7 @@ class RadioService : MediaSessionService() {
         player.setMediaItem(elementSpotify(s, "Łączę ze Spotify..."))
         player.prepare()
         player.play()
+        nasluchStart()
         val start = { r: SpotifyAppRemote ->
             r.playerApi.setShuffle(true).setResultCallback {
                 if (pl.utwory > 1) r.playerApi.skipToIndex(pl.uri, los.nextInt(pl.utwory))
@@ -282,6 +292,7 @@ class RadioService : MediaSessionService() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         if (trybSpotify) zakonczSpotify()
+        nasluch.zakoncz()
         sesja?.run { player.release(); release() }
         sesja = null
         super.onDestroy()
