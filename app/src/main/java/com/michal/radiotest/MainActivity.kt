@@ -695,7 +695,7 @@ class MainActivity : ComponentActivity() {
     private fun odswiez(p: Player) {
         stacja = if (p.mediaItemCount > 0 && p.playbackState != Player.STATE_IDLE)
             p.currentMediaItem?.mediaMetadata?.station?.toString() ?: "" else ""
-        utwor = p.mediaMetadata.title?.toString().orEmpty()
+        utwor = p.currentMediaItem?.mediaMetadata?.artist?.toString().orEmpty()
         graTeraz = p.playWhenReady
         if (stacja.isNotEmpty()) status = when (p.playbackState) {
             Player.STATE_BUFFERING -> "Łączę..."

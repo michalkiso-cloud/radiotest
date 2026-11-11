@@ -11,6 +11,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.Metadata
+import androidx.media3.extractor.metadata.icy.IcyInfo
 import androidx.media3.exoplayer.ExoPlayer
 import android.media.AudioManager
 import androidx.media3.session.CommandButton
@@ -224,6 +227,14 @@ class RadioService : MediaLibraryService() {
     private fun wezFokus() { if (!trybSpotify) am.requestAudioFocus(zadanieFokusu) }
     private fun oddajFokus() { am.abandonAudioFocusRequest(zadanieFokusu) }
 
+    /** Dla sesji: radio na żywo, bez znanego czasu trwania (pasek --:-- także przy Spotify). */
+    private fun owijka(p: ExoPlayer) = object : ForwardingPlayer(p) {
+        override fun getDuration() = C.TIME_UNSET
+        override fun getContentDuration() = C.TIME_UNSET
+        override fun isCurrentMediaItemSeekable() = false
+        override fun isCurrentMediaItemLive() = true
+    }
+
     private fun nowyPlayer(fokus: Boolean): ExoPlayer = ExoPlayer.Builder(this)
         .setAudioAttributes(atrybuty, false)
         .setHandleAudioBecomingNoisy(true)
@@ -241,6 +252,15 @@ class RadioService : MediaLibraryService() {
         }
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) proby = 0
+        }
+        override fun onMetadata(metadata: Metadata) {
+            for (i in 0 until metadata.length()) {
+                val e = metadata.get(i)
+                if (e is IcyInfo && e.title != null && e.title != icyTytul) {
+                    icyTytul = e.title!!
+                    odswiezOpis()
+                }
+            }
         }
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             val powod = when (reason) {
@@ -296,7 +316,7 @@ class RadioService : MediaLibraryService() {
             .setIconResId(R.drawable.ic_stop)
             .setSessionCommand(SessionCommand(KOMENDA_STOP, Bundle.EMPTY))
             .build()
-        sesja = MediaLibrarySession.Builder(this, player, Komendy())
+        sesja = MediaLibrarySession.Builder(this, owijka(player), Komendy())
             .setCustomLayout(ImmutableList.of(stop))
             .build()
         handler.postDelayed(tik, TIK_S * 1000L)
@@ -473,17 +493,20 @@ class RadioService : MediaLibraryService() {
 
     // ---------- Opis w powiadomieniu ----------
 
-    /** Tytuł i podpis bieżącej stacji: „Teraz gra RMF24” w czasie mowy, linia trybu auto. */
+    /** Tytuł utworu ze strumienia (ICY). */
+    private var icyTytul = ""
+
+    /** Wiersz 1: stacja (+ licznik trybu auto), wiersz 2: co gra teraz. */
     private fun opis(s: Stacja): MediaMetadata {
         val auto = StanLosowania.losujeTeraz(this) && StanLosowania.trybAuto(this)
-        val linia = if (auto) "${s.nazwa} · Auto: wykorzystane ${StanLosowania.autoSek(this) / 60} " +
-            "z ${StanLosowania.autoMin(this)} min" else s.nazwa
-        val tytul = when {
+        val wiersz1 = if (auto) "${s.nazwa} · ${StanLosowania.autoSek(this) / 60}/" +
+            "${StanLosowania.autoMin(this)} min" else s.nazwa
+        val wiersz2 = when {
             trybRmf -> "Teraz gra RMF24"
-            trybSpotify -> spotifyUtwor.ifEmpty { null }
-            else -> null      // tytuł utworu ze strumienia (ICY)
-        }
-        return MediaMetadata.Builder().setStation(s.nazwa).setArtist(linia).setTitle(tytul)
+            trybSpotify -> spotifyUtwor
+            else -> icyTytul
+        }.ifEmpty { null }
+        return MediaMetadata.Builder().setStation(s.nazwa).setTitle(wiersz1).setArtist(wiersz2)
             .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION).build()
     }
 
@@ -494,6 +517,7 @@ class RadioService : MediaLibraryService() {
         val nowy = opis(s)
         val stary = item.mediaMetadata
         if (stary.artist == nowy.artist && stary.title == nowy.title) return
+        // ten sam adres: odtwarzanie trwa, zmienia się tylko opis
         player.replaceMediaItem(player.currentMediaItemIndex, item.buildUpon().setMediaMetadata(nowy).build())
     }
 
@@ -505,6 +529,7 @@ class RadioService : MediaLibraryService() {
         anulujPrzenikanie()
         val poprzednia = obecna
         obecna = s
+        icyTytul = ""
         if (s.adres == SPOTIFY_ADRES) { grajSpotify(s); return }
         val bylSpotify = trybSpotify
         if (trybSpotify) zakonczSpotify()
@@ -579,7 +604,7 @@ class RadioService : MediaLibraryService() {
         stary.removeListener(sluchacz)
         player = nowy
         nowy.addListener(sluchacz)
-        sesja?.player = nowy
+        sesja?.player = owijka(nowy)
         LogMowy.dodaj("Przenikanie stacji")
         val g = stary.volume
         przejscie(koniec = {
