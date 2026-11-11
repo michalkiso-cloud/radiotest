@@ -125,12 +125,12 @@ class RadioService : MediaSessionService() {
             .ifEmpty { m.losowanie.filter { m.stacja(it.id) != null } }
         val suma = pula.sumOf { it.waga }
         if (suma <= 0) return null
-        var r = los.nextInt(suma)
+        var r = los.nextDouble() * suma
         for (l in pula) {
             r -= l.waga
             if (r < 0) return m.stacja(l.id)
         }
-        return null
+        return m.stacja(pula.last().id)
     }
 
     private fun losuj() {
