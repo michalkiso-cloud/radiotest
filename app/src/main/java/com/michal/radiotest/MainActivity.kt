@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -159,8 +160,11 @@ class MainActivity : ComponentActivity() {
 
     // ---------- Ekran główny ----------
 
+    private var pokazLog by mutableStateOf(false)
+
     @Composable
     private fun Ekran() {
+        BackHandler(enabled = pokazLog) { pokazLog = false }
         var zakladka by remember { mutableIntStateOf(0) }
         var edycja by remember { mutableStateOf<Stacja?>(null) }
         var nowa by remember { mutableStateOf(false) }
@@ -170,13 +174,14 @@ class MainActivity : ComponentActivity() {
 
         Scaffold(
             floatingActionButton = {
-                if (zakladka == 0) FloatingActionButton(onClick = { nowa = true }) {
+                if (zakladka == 0 && !pokazLog) FloatingActionButton(onClick = { nowa = true }) {
                     Icon(Icons.Filled.Add, contentDescription = "Dodaj stację")
                 }
             }
         ) { pad ->
             Column(Modifier.padding(pad).fillMaxSize()) {
                 Naglowek()
+                if (pokazLog) { EkranLogu(); return@Column }
                 TabRow(selectedTabIndex = zakladka) {
                     Tab(zakladka == 0, { zakladka = 0 }, text = { Text("Stacje") })
                     Tab(zakladka == 1, { zakladka = 1 }, text = { Text("Losowanie") })
@@ -257,17 +262,25 @@ class MainActivity : ComponentActivity() {
             if (LogMowy.graRmf.value) Text("Teraz gra RMF24 (mowa)",
                 color = if (ciemny) Color(0xFF81C784) else Color(0xFF2E7D32),
                 fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-            Text(status, style = MaterialTheme.typography.bodySmall)
-            if (trybAuto && losujeTeraz && stacja.isNotEmpty()) Text(
-                "Auto: wykorzystane $autoMin min z $autoLimit",
-                color = if (ciemny) Color(0xFFF48FB1) else Color(0xFFAD1457),
-                style = MaterialTheme.typography.bodySmall
-            )
-            if (stacja.isNotEmpty()) HorizontalDivider(
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    Text(status, style = MaterialTheme.typography.bodySmall)
+                    if (trybAuto && losujeTeraz && stacja.isNotEmpty()) Text(
+                        "Auto: wykorzystane $autoMin min z $autoLimit",
+                        color = if (ciemny) Color(0xFFF48FB1) else Color(0xFFAD1457),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (!pokazLog) Text("Log", style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { pokazLog = true }
+                        .padding(start = 12.dp, end = 16.dp, top = 6.dp, bottom = 2.dp))
+            }
+            if (stacja.isNotEmpty() || pokazLog) HorizontalDivider(
                 Modifier.padding(end = 12.dp, top = 6.dp),
                 thickness = 2.dp, color = MaterialTheme.colorScheme.primary
             )
-            Column(
+            if (!pokazLog) Column(
                 Modifier.fillMaxWidth().padding(end = 12.dp, top = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -554,7 +567,17 @@ class MainActivity : ComponentActivity() {
             }
             PoleSekund("Czas przejścia (s): RMF24 i zmiana stacji", UstMowy.czasPrzejscia(this@MainActivity),
                 Modifier.fillMaxWidth()) { UstMowy.ustawCzasPrzejscia(this@MainActivity, it) }
-            HorizontalDivider()
+        }
+    }
+
+    @Composable
+    private fun EkranLogu() {
+        Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { pokazLog = false }) { Text("← Wróć") }
+                Spacer(Modifier.weight(1f))
+                Text("Log", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(end = 8.dp))
+            }
             LazyColumn(Modifier.fillMaxSize()) {
                 items(LogMowy.wpisy) { w ->
                     Text(w, fontSize = 12.sp, lineHeight = 15.sp,
