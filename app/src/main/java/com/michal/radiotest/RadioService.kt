@@ -184,11 +184,27 @@ class RadioService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
         player.addListener(object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) = wznow()
+            override fun onPlayerError(error: PlaybackException) {
+                LogMowy.dodaj("Błąd strumienia: ${error.errorCodeName} (próba ${proby + 1})")
+                wznow()
+            }
+            override fun onPlaybackSuppressionReasonChanged(reason: Int) {
+                if (reason != Player.PLAYBACK_SUPPRESSION_REASON_NONE)
+                    LogMowy.dodaj("Wstrzymane przez system (powód $reason, np. fokus dźwięku)")
+            }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) proby = 0
             }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                val powod = when (reason) {
+                    Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "przycisk"
+                    Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "inna aplikacja przejęła dźwięk"
+                    Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "odłączone słuchawki"
+                    Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "sterowanie zdalne"
+                    Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "koniec strumienia"
+                    else -> "powód $reason"
+                }
+                LogMowy.dodaj((if (playWhenReady) "Gra" else "PAUZA") + ": $powod")
                 if (!playWhenReady) {
                     // pauza (także po odłączeniu słuchawek): bez RMF24 i bez nasłuchu
                     przerwijRmf()
@@ -283,6 +299,7 @@ class RadioService : MediaSessionService() {
                 val m = Magazyn(this@RadioService)
                 val nowa = wylosuj(m, prefs.getString("auto_id", null))
                 prefs.edit().putInt("auto_sek", 0).putString("auto_id", nowa?.id).apply()
+                LogMowy.dodaj("Auto: minął czas, zmiana stacji na ${nowa?.nazwa ?: "(brak)"}")
                 nowa?.let { graj(it) }
             } else {
                 val e = prefs.edit().putInt("auto_sek", sek)
@@ -295,6 +312,7 @@ class RadioService : MediaSessionService() {
     // ---------- Odtwarzanie ----------
 
     private fun graj(s: Stacja) {
+        LogMowy.dodaj("Start stacji: ${s.nazwa}")
         przerwijRmf()
         if (s.adres == SPOTIFY_ADRES) { grajSpotify(s); return }
         if (trybSpotify) zakonczSpotify()
@@ -330,7 +348,7 @@ class RadioService : MediaSessionService() {
     private fun grajSpotify(s: Stacja) {
         val pl = SpotifyUst.wybrana(this)
         if (pl == null) {
-            Log.w("Radio", "Spotify: nie wybrano playlisty")
+            LogMowy.dodaj("Spotify: nie wybrano playlisty")
             return
         }
         handler.removeCallbacks(ponow)
@@ -370,6 +388,7 @@ class RadioService : MediaSessionService() {
 
             override fun onFailure(t: Throwable) {
                 Log.e("Radio", "Spotify: błąd połączenia", t)
+                LogMowy.dodaj("Spotify: błąd połączenia ${t.javaClass.simpleName}")
                 if (trybSpotify) player.replaceMediaItem(0,
                     elementSpotify(s, "Błąd Spotify: ${t.javaClass.simpleName}. Połącz w Ustawieniach."))
             }
