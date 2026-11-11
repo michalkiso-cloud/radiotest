@@ -742,6 +742,11 @@ class RadioService : MediaLibraryService() {
             }
 
             override fun onFailure(t: Throwable) {
+                // zerwanie po naszym rozłączeniu (stop, zmiana stacji) to nie błąd
+                if (t.javaClass.simpleName == "SpotifyConnectionTerminatedException") {
+                    if (trybSpotify && !dlaKonca) { spotify = null; LogMowy.dodaj("Spotify: połączenie zerwane, połączę przy następnej akcji") }
+                    return
+                }
                 Log.e("Radio", "Spotify: błąd połączenia", t)
                 LogMowy.dodaj("Spotify: błąd połączenia ${t.javaClass.simpleName}")
                 if (trybSpotify && !dlaKonca) { spotifyUtwor = "Błąd Spotify: połącz w Ustawieniach"; odswiezOpis() }
