@@ -42,7 +42,13 @@ jobs:
           cp "$AUTH" app/libs/
 
       - name: Buduj
-        run: gradle :app:assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          if ! gradle :app:assembleDebug 2>&1 | tee build.log; then
+            echo "===== BŁĘDY KOMPILACJI ====="
+            grep -E "^e: |error:" build.log || true
+            exit 1
+          fi
 
       - name: Wydanie z APK
         env:

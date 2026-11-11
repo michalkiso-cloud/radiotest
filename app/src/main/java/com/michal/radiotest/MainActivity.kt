@@ -83,10 +83,15 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
+import androidx.compose.runtime.mutableStateListOf
+import com.spotify.sdk.android.auth.AuthorizationClient
+import com.spotify.sdk.android.auth.AuthorizationRequest
+import com.spotify.sdk.android.auth.AuthorizationResponse
 import kotlinx.coroutines.delay
 import java.util.Locale
 
 private val ZIELONY = Color(0xFF2E7D32)
+private const val KOD_SPOTIFY = 1337
 
 private fun procentTekst(p: Double) = String.format(Locale("pl"), "%.1f%%", p)
 
@@ -104,6 +109,11 @@ class MainActivity : ComponentActivity() {
     private var autoLimit by mutableIntStateOf(60)
     private var wzgledny by mutableStateOf(true)
     private var losujeTeraz by mutableStateOf(false)
+    private var spotifyPolaczone by mutableStateOf(false)
+    private var playlista by mutableStateOf<Playlista?>(null)
+    private val playlisty = mutableStateListOf<Playlista>()
+    private var pobieranie by mutableStateOf(false)
+    private var pobierzPoZgodzie = false
     private val zgodaPowiadomienia =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -120,6 +130,8 @@ class MainActivity : ComponentActivity() {
         trybAuto = StanLosowania.trybAuto(this)
         autoLimit = StanLosowania.autoMin(this)
         wzgledny = StanLosowania.wzgledny(this)
+        spotifyPolaczone = SpotifyUst.polaczone(this)
+        playlista = SpotifyUst.wybrana(this)
         setContent {
             val ciemny = when (motyw) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
             MaterialTheme(colorScheme = if (ciemny) darkColorScheme() else lightColorScheme()) {
@@ -264,13 +276,16 @@ class MainActivity : ComponentActivity() {
                         verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(s.nazwa, style = MaterialTheme.typography.titleMedium)
-                            Text(if (magazyn.wLosowaniu(s.id)) "w losowaniu" else "poza losowaniem",
+                            val opis = if (magazyn.wLosowaniu(s.id)) "w losowaniu" else "poza losowaniem"
+                            Text(if (s.adres == SPOTIFY_ADRES)
+                                "${playlista?.nazwa ?: "playlista niewybrana"} (shuffle), $opis" else opis,
                                 style = MaterialTheme.typography.bodySmall)
                         }
                         if (gra) IconButton(onClick = { stop() }) {
                             Box(Modifier.size(16.dp).background(MaterialTheme.colorScheme.onSurface))
                         } else IconButton(onClick = { graj(s) }) { Icon(Icons.Filled.PlayArrow, "Start") }
-                        IconButton(onClick = { onEdytuj(s) }) { Icon(Icons.Filled.Edit, "Edytuj") }
+                        if (s.adres != SPOTIFY_ADRES)
+                            IconButton(onClick = { onEdytuj(s) }) { Icon(Icons.Filled.Edit, "Edytuj") }
                         IconButton(onClick = { onUsun(s) }) { Icon(Icons.Filled.Delete, "Usuń") }
                     }
                 }
@@ -285,6 +300,7 @@ class MainActivity : ComponentActivity() {
         Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             HorizontalDivider()
             Text("Ustawienia", style = MaterialTheme.typography.titleMedium)
+            UstawieniaSpotify()
             OutlinedTextField(
                 value = kluczDi, onValueChange = { kluczDi = it },
                 label = { Text("Klucz DI.FM premium") }, singleLine = true,
@@ -299,6 +315,79 @@ class MainActivity : ComponentActivity() {
             else OutlinedButton(onClick = { bateria() }) { Text("Ustaw baterię: bez ograniczeń") }
             Text("Wersja ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
         }
+    }
+
+    @Composable
+    private fun UstawieniaSpotify() {
+        var otwarte by remember { mutableStateOf(false) }
+        Text("Spotify", style = MaterialTheme.typography.titleSmall)
+        if (!spotifyPolaczone) {
+            OutlinedButton(onClick = { pobierzPoZgodzie = true; zgodaSpotify() }) { Text("Połącz ze Spotify") }
+            return
+        }
+        Box {
+            OutlinedButton(
+                onClick = {
+                    otwarte = true
+                    if (playlisty.isEmpty()) pobierzPlaylisty()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Playlista: ${playlista?.nazwa ?: "wybierz"}  ▾",
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            DropdownMenu(expanded = otwarte, onDismissRequest = { otwarte = false }) {
+                if (pobieranie) DropdownMenuItem(text = { Text("Pobieram listę...") }, onClick = {})
+                playlisty.forEach { pl ->
+                    DropdownMenuItem(
+                        text = { Text((if (pl.uri == playlista?.uri) "✓ " else "") + pl.nazwa) },
+                        onClick = {
+                            SpotifyUst.wybierz(this@MainActivity, pl)
+                            playlista = pl
+                            otwarte = false
+                        }
+                    )
+                }
+            }
+        }
+        TextButton(onClick = { playlisty.clear(); pobierzPlaylisty() }) { Text("Odśwież listę playlist") }
+    }
+
+    private fun zgodaSpotify() {
+        val req = AuthorizationRequest.Builder(CLIENT_ID, AuthorizationResponse.Type.TOKEN, REDIRECT_URI)
+            .setScopes(SPOTIFY_ZAKRESY).build()
+        AuthorizationClient.openLoginActivity(this, KOD_SPOTIFY, req)
+    }
+
+    @Deprecated("Spotify SDK zwraca wynik przez onActivityResult")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != KOD_SPOTIFY) return
+        val r = AuthorizationClient.getResponse(resultCode, data)
+        when (r.type) {
+            AuthorizationResponse.Type.TOKEN -> {
+                SpotifyUst.zapiszToken(this, r.accessToken, r.expiresIn)
+                SpotifyUst.ustawPolaczone(this)
+                spotifyPolaczone = true
+                status = "Połączono ze Spotify."
+                if (pobierzPoZgodzie) { pobierzPoZgodzie = false; pobierzPlaylisty() }
+            }
+            AuthorizationResponse.Type.ERROR -> status = "Spotify: błąd zgody (${r.error})"
+            else -> status = "Spotify: zgoda przerwana."
+        }
+    }
+
+    private fun pobierzPlaylisty() {
+        val token = SpotifyUst.token(this) ?: run { pobierzPoZgodzie = true; zgodaSpotify(); return }
+        pobieranie = true
+        Thread {
+            val wynik = runCatching { SpotifyUst.pobierzPlaylisty(token) }
+            runOnUiThread {
+                pobieranie = false
+                wynik.onSuccess { playlisty.clear(); playlisty.addAll(it); status = "Playlist: ${it.size}" }
+                    .onFailure { status = "Spotify: ${it.message}" }
+            }
+        }.start()
     }
 
     @Composable
@@ -506,6 +595,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun graj(s: Stacja) {
+        if (s.adres == SPOTIFY_ADRES && playlista == null) {
+            status = "Najpierw wybierz playlistę Spotify (na dole zakładki Stacje)."
+            return
+        }
         if (s.adres.contains(ZNACZNIK_DI) && kluczDi.isBlank()) {
             status = "Najpierw wpisz i zapisz klucz DI.FM (na dole zakładki Stacje)."
             return

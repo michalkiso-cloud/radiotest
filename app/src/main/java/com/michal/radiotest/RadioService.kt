@@ -17,6 +17,11 @@ import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
+import com.spotify.android.appremote.api.ConnectionParams
+import com.spotify.android.appremote.api.Connector
+import com.spotify.android.appremote.api.SpotifyAppRemote
+import android.net.Uri
+import android.util.Log
 import com.google.common.util.concurrent.ListenableFuture
 import java.time.LocalDate
 import java.security.SecureRandom
@@ -51,17 +56,21 @@ class RadioService : MediaSessionService() {
     private var ostatniZapis = 0L
 
     private val prefs get() = StanLosowania.prefs(this)
+    private val atrybuty = AudioAttributes.Builder()
+        .setUsage(C.USAGE_MEDIA)
+        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+        .build()
+
+    // Spotify: gdy gra, ExoPlayer odtwarza ciszę (bez przejmowania fokusu dźwięku),
+    // a pauza/stop z aplikacji i powiadomienia są przekazywane do Spotify.
+    private var trybSpotify = false
+    private var spotify: SpotifyAppRemote? = null
+    private var spotifyUtwor = ""
 
     override fun onCreate() {
         super.onCreate()
         player = ExoPlayer.Builder(this)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                true
-            )
+            .setAudioAttributes(atrybuty, true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
@@ -69,6 +78,13 @@ class RadioService : MediaSessionService() {
             override fun onPlayerError(error: PlaybackException) = wznow()
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) proby = 0
+            }
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (!trybSpotify) return
+                spotify?.playerApi?.let { if (playWhenReady) it.resume() else it.pause() }
+            }
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_IDLE && trybSpotify) zakonczSpotify()
             }
         })
         sesja = MediaSession.Builder(this, player).setCallback(Komendy()).build()
@@ -162,6 +178,10 @@ class RadioService : MediaSessionService() {
     // ---------- Odtwarzanie ----------
 
     private fun graj(s: Stacja) {
+        if (s.adres == SPOTIFY_ADRES) { grajSpotify(s); return }
+        if (trybSpotify) zakonczSpotify()
+        player.setAudioAttributes(atrybuty, true)
+        player.volume = 1f
         val klucz = getSharedPreferences("ustawienia", MODE_PRIVATE).getString("klucz_di", "") ?: ""
         val item = MediaItem.Builder()
             .setUri(s.adres.replace(ZNACZNIK_DI, klucz.trim()))
@@ -179,6 +199,73 @@ class RadioService : MediaSessionService() {
         if (player.mediaItemCount > 0) { player.prepare(); player.play() }
     }
 
+    // ---------- Spotify ----------
+
+    private fun elementSpotify(s: Stacja, tytul: String) = MediaItem.Builder()
+        .setUri(Uri.fromFile(plikCiszy(this)))
+        .setMediaId(s.id)
+        .setMediaMetadata(MediaMetadata.Builder().setStation(s.nazwa).setArtist(s.nazwa)
+            .setTitle(tytul.ifEmpty { null }).build())
+        .build()
+
+    private fun grajSpotify(s: Stacja) {
+        val pl = SpotifyUst.wybrana(this)
+        if (pl == null) {
+            Log.w("Radio", "Spotify: nie wybrano playlisty")
+            return
+        }
+        handler.removeCallbacks(ponow)
+        trybSpotify = true
+        spotifyUtwor = ""
+        // cisza w pętli, bez fokusu dźwięku (inaczej Spotify by ją wyciszał i odwrotnie)
+        player.setAudioAttributes(atrybuty, false)
+        player.volume = 0f
+        player.repeatMode = Player.REPEAT_MODE_ONE
+        player.setMediaItem(elementSpotify(s, "Łączę ze Spotify..."))
+        player.prepare()
+        player.play()
+        val start = { r: SpotifyAppRemote ->
+            r.playerApi.setShuffle(true).setResultCallback {
+                if (pl.utwory > 1) r.playerApi.skipToIndex(pl.uri, los.nextInt(pl.utwory))
+                else r.playerApi.play(pl.uri)
+            }
+        }
+        spotify?.takeIf { it.isConnected }?.let { start(it); return }
+        val params = ConnectionParams.Builder(CLIENT_ID).setRedirectUri(REDIRECT_URI)
+            .showAuthView(false).build()
+        SpotifyAppRemote.connect(this, params, object : Connector.ConnectionListener {
+            override fun onConnected(r: SpotifyAppRemote) {
+                if (!trybSpotify) { SpotifyAppRemote.disconnect(r); return }
+                spotify = r
+                start(r)
+                r.playerApi.subscribeToPlayerState().setEventCallback { st ->
+                    val t = st.track ?: return@setEventCallback
+                    val tytul = "${t.artist?.name ?: ""} – ${t.name ?: ""}"
+                    if (tytul != spotifyUtwor && trybSpotify) {
+                        spotifyUtwor = tytul
+                        player.currentMediaItem?.let { player.replaceMediaItem(0, elementSpotify(s, tytul)) }
+                    }
+                }
+            }
+
+            override fun onFailure(t: Throwable) {
+                Log.e("Radio", "Spotify: błąd połączenia", t)
+                if (trybSpotify) player.replaceMediaItem(0,
+                    elementSpotify(s, "Błąd Spotify: ${t.javaClass.simpleName}. Połącz w Ustawieniach."))
+            }
+        })
+    }
+
+    private fun zakonczSpotify() {
+        trybSpotify = false
+        spotify?.let { r ->
+            r.playerApi.pause()
+            SpotifyAppRemote.disconnect(r)
+        }
+        spotify = null
+        player.repeatMode = Player.REPEAT_MODE_OFF
+    }
+
     /** Zerwany strumień: ponowne próby po 2, 5, 15, 60 i 120 s. */
     private fun wznow() {
         if (proby >= WZNOW_ODSTEPY_S.size) return
@@ -194,6 +281,7 @@ class RadioService : MediaSessionService() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        if (trybSpotify) zakonczSpotify()
         sesja?.run { player.release(); release() }
         sesja = null
         super.onDestroy()

@@ -14,6 +14,8 @@ data class Los(val id: String, val waga: Double)
 
 const val ZNACZNIK_DI = "{KLUCZ_DI}"
 const val RMF24 = "https://rs201-krk.rmfstream.pl/RMF24"
+/** Adres specjalnej stacji Spotify: gra playlistę wybraną w Ustawieniach (shuffle). */
+const val SPOTIFY_ADRES = "spotify:wybrana"
 
 /** Lista stacji i losowania zapisywana w telefonie. */
 class Magazyn(ctx: Context) {
@@ -31,6 +33,11 @@ class Magazyn(ctx: Context) {
             val l = JSONArray(prefs.getString("losowanie", "[]"))
             losowanie.addAll((0 until l.length()).map { l.getJSONObject(it) }
                 .map { Los(it.getString("id"), it.optDouble("waga", 4.0)) })
+        }
+        if (!prefs.getBoolean("spotify_dodany", false)) {
+            if (stacje.none { it.adres == SPOTIFY_ADRES }) stacje.add(Stacja(noweId(), "Spotify", SPOTIFY_ADRES))
+            prefs.edit().putBoolean("spotify_dodany", true).apply()
+            zapisz()
         }
     }
 
