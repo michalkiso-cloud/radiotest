@@ -36,6 +36,10 @@ jobs:
           if [ -z "$AAR" ]; then echo "Nie znaleziono AAR app-remote"; find sdk; exit 1; fi
           echo "Używam: $AAR"
           cp "$AAR" app/libs/
+          AUTH=$(find sdk -iname '*auth*.aar' | sort -V | tail -n 1)
+          if [ -z "$AUTH" ]; then echo "Nie znaleziono AAR auth"; find sdk -name '*.aar'; exit 1; fi
+          echo "Używam: $AUTH"
+          cp "$AUTH" app/libs/
 
       - name: Buduj
         run: gradle :app:assembleDebug --stacktrace

@@ -12,8 +12,11 @@ android {
         applicationId = "com.michal.radiotest"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2"
+        manifestPlaceholders["redirectSchemeName"] = "radiotest"
+        manifestPlaceholders["redirectHostName"] = "callback"
+        manifestPlaceholders["redirectPathPattern"] = ".*"
     }
 
     signingConfigs {
@@ -49,4 +52,5 @@ dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("com.fasterxml.jackson.core:jackson-annotations:2.17.2")
+    implementation("androidx.browser:browser:1.8.0")
 }
