@@ -74,6 +74,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -297,7 +298,7 @@ class MainActivity : ComponentActivity() {
                     Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(s.nazwa, style = MaterialTheme.typography.titleMedium)
+                            Text(s.nazwa, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                             val opis = if (magazyn.wLosowaniu(s.id)) "w losowaniu" else "poza losowaniem"
                             Text(if (s.adres == SPOTIFY_ADRES)
                                 "${playlista?.nazwa ?: "playlista niewybrana"} (shuffle), $opis" else opis,
@@ -321,7 +322,7 @@ class MainActivity : ComponentActivity() {
     private fun UstawieniaOgolne() {
         Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             HorizontalDivider()
-            Text("Ustawienia", style = MaterialTheme.typography.titleMedium)
+            Text("Ustawienia", fontSize = 14.sp, fontWeight = FontWeight.Bold)
             UstawieniaSpotify()
             OutlinedTextField(
                 value = kluczDi, onValueChange = { kluczDi = it },
@@ -445,7 +446,7 @@ class MainActivity : ComponentActivity() {
             color = if (wyrozniona) ZIELONY else MaterialTheme.colorScheme.secondaryContainer,
             contentColor = if (wyrozniona) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
         ) {
-            Text(tekst, fontSize = 16.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+            Text(tekst, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
         }
     }
 
@@ -471,13 +472,13 @@ class MainActivity : ComponentActivity() {
 
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()
-            Text("Ustawienia", style = MaterialTheme.typography.titleMedium)
+            Text("Ustawienia", fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Row(
                 Modifier.fillMaxWidth().clickable { ustawAutostart(!autostart) },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(checked = autostart, onCheckedChange = { ustawAutostart(it) })
-                Text("Graj losowo po uruchomieniu aplikacji")
+                Text("Graj losowo po uruchomieniu aplikacji", fontSize = 14.sp)
             }
             Opcja("Losowanie raz dziennie", !trybAuto) { ustawTryb(false) }
             Opcja("Losowanie co X minut", trybAuto) { ustawTryb(true) }
@@ -542,7 +543,7 @@ class MainActivity : ComponentActivity() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             RadioButton(selected = wybrana, onClick = onClick)
-            Text(tekst)
+            Text(tekst, fontSize = 14.sp)
         }
     }
 
