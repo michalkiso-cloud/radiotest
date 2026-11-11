@@ -544,6 +544,14 @@ class MainActivity : ComponentActivity() {
             )
             Text("Próg $PROG_YAMNET, blok $BLOK_S s, potwierdzenie: mowa $POTW_MOWA, muzyka $POTW_MUZYKA. " +
                 "Przy werdykcie MOWA gra RMF24 od początku mowy, potem płynny powrót.", style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PoleSekund("Margines początku (s)", UstMowy.margPocz(this@MainActivity), Modifier.weight(1f)) {
+                    UstMowy.ustawMargPocz(this@MainActivity, it)
+                }
+                PoleSekund("Margines końca (s)", UstMowy.margKon(this@MainActivity), Modifier.weight(1f)) {
+                    UstMowy.ustawMargKon(this@MainActivity, it)
+                }
+            }
             HorizontalDivider()
             LazyColumn(Modifier.fillMaxSize()) {
                 items(LogMowy.wpisy) { w ->
@@ -552,6 +560,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    @Composable
+    private fun PoleSekund(etykieta: String, wartosc: Float, modifier: Modifier, zapisz: (Float) -> Unit) {
+        var tekst by remember {
+            mutableStateOf(if (wartosc % 1f == 0f) wartosc.toInt().toString() else wartosc.toString())
+        }
+        OutlinedTextField(
+            value = tekst,
+            onValueChange = { t ->
+                tekst = t.replace(',', '.').filter { it.isDigit() || it == '.' }.take(4)
+                tekst.toFloatOrNull()?.let(zapisz)
+            },
+            label = { Text(etykieta, fontSize = 12.sp) }, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = modifier
+        )
     }
 
     @Composable

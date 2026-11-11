@@ -73,6 +73,12 @@ object UstMowy {
     private fun p(c: Context) = c.getSharedPreferences("mowa", Context.MODE_PRIVATE)
     fun wlaczone(c: Context) = p(c).getBoolean("wlaczone", true)
     fun ustaw(c: Context, w: Boolean) = p(c).edit().putBoolean("wlaczone", w).apply()
+    /** Zapas przed pierwszym oknem z mową przy przełączaniu na RMF24 (s). */
+    fun margPocz(c: Context) = p(c).getFloat("marg_pocz", 4f)
+    /** Zapas po ostatnim oknie z mową przy powrocie do muzyki (s). */
+    fun margKon(c: Context) = p(c).getFloat("marg_kon", 2f)
+    fun ustawMargPocz(c: Context, v: Float) = p(c).edit().putFloat("marg_pocz", v.coerceIn(0f, 20f)).apply()
+    fun ustawMargKon(c: Context, v: Float) = p(c).edit().putFloat("marg_kon", v.coerceIn(0f, 20f)).apply()
 }
 
 /**

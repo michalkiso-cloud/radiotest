@@ -33,8 +33,6 @@ private const val TIK_S = 5
 private val WZNOW_ODSTEPY_S = longArrayOf(2, 5, 15, 60, 120)
 // przełączanie na RMF24 (jak w skrypcie)
 private const val COFNIJ_BLOKOW = 1
-private const val MARGINES_POCZ_S = 4f
-private const val MARGINES_S = 2f
 private const val KONIEC_MOWY_S = 20f
 private const val FADE_S = 1f
 
@@ -108,7 +106,7 @@ class RadioService : MediaSessionService() {
         for (kk in kp..ks) {
             val b = bloki[kk] ?: continue
             val tp = b.pierwMowaS ?: continue
-            start = b.ramkaStart + ((tp - MARGINES_POCZ_S) * sr()).toLong()
+            start = b.ramkaStart + ((tp - UstMowy.margPocz(this)) * sr()).toLong()
             LogMowy.dodaj(String.format(Locale.US, "Początek mowy w bloku %+d: %.1f s", kk - ks, tp))
             break
         }
@@ -129,6 +127,7 @@ class RadioService : MediaSessionService() {
         val b = bloki[ks] ?: return
         val ost = b.ostMowaS
         val pop = bloki[ks - 1]
+        val MARGINES_S = UstMowy.margKon(this)
         val koniec: Float = when {
             ost != null -> minOf(KONIEC_MOWY_S, ost + MARGINES_S)
             pop?.ostMowaS != null ->
