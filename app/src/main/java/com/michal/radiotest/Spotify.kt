@@ -31,6 +31,21 @@ object SpotifyUst {
     fun wybierz(c: Context, pl: Playlista) = p(c).edit().putString("uri", pl.uri)
         .putString("nazwa", pl.nazwa).putInt("utwory", pl.utwory).apply()
 
+    fun zapiszLiczbe(c: Context, n: Int) = p(c).edit().putInt("utwory", n).apply()
+
+    /** Aktualna liczba utworów w playliście (Web API); null, gdy się nie udało. */
+    fun liczbaUtworow(token: String, uri: String): Int? = runCatching {
+        val id = uri.substringAfterLast(":")
+        val pol = URL("https://api.spotify.com/v1/playlists/$id?fields=tracks.total")
+            .openConnection() as HttpURLConnection
+        pol.setRequestProperty("Authorization", "Bearer $token")
+        pol.connectTimeout = 8_000
+        pol.readTimeout = 8_000
+        if (pol.responseCode != 200) return@runCatching null
+        JSONObject(pol.inputStream.bufferedReader().readText())
+            .optJSONObject("tracks")?.optInt("total")
+    }.getOrNull()
+
     /** Lista playlist z Twojego konta (Web API, wymaga tokenu). Wywoływać poza wątkiem głównym. */
     fun pobierzPlaylisty(token: String): List<Playlista> {
         val wynik = mutableListOf<Playlista>()

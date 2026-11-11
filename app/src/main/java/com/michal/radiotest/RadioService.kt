@@ -654,10 +654,25 @@ class RadioService : MediaLibraryService() {
         player.prepare()
         player.play()
         nasluchStart()
+        val token = SpotifyUst.token(this)
+        if (token == null) startSpotify(pl.uri, pl.utwory)
+        else Thread {
+            val n = SpotifyUst.liczbaUtworow(token, pl.uri)
+            if (n != null && n != pl.utwory) {
+                SpotifyUst.zapiszLiczbe(this, n)
+                LogMowy.dodaj("Spotify: playlista ma teraz $n utworów")
+            }
+            handler.post { if (trybSpotify) startSpotify(pl.uri, n ?: pl.utwory) }
+        }.start()
+    }
+
+    /** Shuffle i start od losowego utworu; gdy indeks nie pasuje, start od początku. */
+    private fun startSpotify(uri: String, utwory: Int) {
         naSpotify { r ->
             r.playerApi.setShuffle(true).setResultCallback {
-                if (pl.utwory > 1) r.playerApi.skipToIndex(pl.uri, los.nextInt(pl.utwory))
-                else r.playerApi.play(pl.uri)
+                if (utwory > 1) r.playerApi.skipToIndex(uri, los.nextInt(utwory))
+                    .setErrorCallback { r.playerApi.play(uri) }
+                else r.playerApi.play(uri)
             }
         }
     }
