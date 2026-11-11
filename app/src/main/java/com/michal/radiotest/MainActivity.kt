@@ -11,7 +11,10 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,6 +32,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -168,6 +172,7 @@ class MainActivity : ComponentActivity() {
                     s,
                     opis = if (magazyn.wLosowaniu(s.id)) "w losowaniu" else "poza losowaniem"
                 ) {
+                    StartStop(s)
                     IconButton(onClick = { onEdytuj(s) }) { Icon(Icons.Filled.Edit, "Edytuj") }
                     IconButton(onClick = { onUsun(s) }) { Icon(Icons.Filled.Delete, "Usuń") }
                 }
@@ -192,6 +197,17 @@ class MainActivity : ComponentActivity() {
                 }
                 akcje()
             }
+        }
+    }
+
+    @Composable
+    private fun StartStop(s: Stacja) {
+        if (s.nazwa == stacja) {
+            IconButton(onClick = { stop() }) {
+                Box(Modifier.size(16.dp).background(MaterialTheme.colorScheme.onSurface))
+            }
+        } else {
+            IconButton(onClick = { graj(s) }) { Icon(Icons.Filled.PlayArrow, "Start") }
         }
     }
 
