@@ -158,10 +158,10 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
                 false
             )
             .setWakeMode(C.WAKE_MODE_NETWORK)
-            // przedstawia się jak mpv ze skryptu: serwer RMF wstawia reklamy
-            // (prawdopodobnie) tylko odbiorcom rozpoznanym jako aplikacja mobilna
+            // przedstawia się jak nagrywanie w skrypcie (Python urllib): serwer RMF wstawia
+            // reklamy (prawdopodobnie) tylko odbiorcom rozpoznanym jako aplikacja/odtwarzacz
             .setMediaSourceFactory(DefaultMediaSourceFactory(
-                DefaultHttpDataSource.Factory().setUserAgent("libmpv")
+                DefaultHttpDataSource.Factory().setUserAgent("Python-urllib/3.12")
                     .setAllowCrossProtocolRedirects(true)))
             .build()
         p.volume = 0f

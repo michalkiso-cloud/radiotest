@@ -378,6 +378,8 @@ class RadioService : MediaLibraryService() {
             .build()
         handler.postDelayed(tik, TIK_S * 1000L)
         runCatching { getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(siec) }
+        runCatching { auto.type.observeForever(obserwatorAuta) }
+        runCatching { getSystemService(AudioManager::class.java).registerAudioDeviceCallback(urzadzenia, handler) }
     }
 
     // ---------- Sesja: aplikacja, powiadomienie, Android Auto ----------
@@ -860,6 +862,41 @@ class RadioService : MediaLibraryService() {
         proby++
     }
 
+    // ---------- Wyjście z auta ----------
+    // Android Auto (zwłaszcza bezprzewodowe) przesyła dźwięk własnym kanałem, więc po
+    // rozłączeniu Android nie zgłasza „odłączonych słuchawek” i radio grałoby z głośnika.
+    private val auto by lazy { androidx.car.app.connection.CarConnection(this) }
+    private var bylePolaczenieAuta = androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED
+    private val obserwatorAuta = androidx.lifecycle.Observer<Int> { typ ->
+        val bylo = bylePolaczenieAuta
+        bylePolaczenieAuta = typ
+        if (bylo != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED &&
+            typ == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED)
+            pauzaPoWyjsciu("rozłączone Android Auto")
+    }
+
+    private val zewnetrzne = setOf(
+        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, android.media.AudioDeviceInfo.TYPE_USB_DEVICE,
+        android.media.AudioDeviceInfo.TYPE_USB_HEADSET, android.media.AudioDeviceInfo.TYPE_USB_ACCESSORY,
+        android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES, android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        android.media.AudioDeviceInfo.TYPE_BUS, android.media.AudioDeviceInfo.TYPE_BLE_HEADSET,
+        android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER)
+    private val urzadzenia = object : android.media.AudioDeviceCallback() {
+        override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>) {
+            if (removed.none { it.isSink && it.type in zewnetrzne }) return
+            val am = getSystemService(AudioManager::class.java)
+            val zostaly = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { it.type in zewnetrzne }
+            if (!zostaly) pauzaPoWyjsciu("odłączone urządzenie dźwięku (" +
+                removed.first { it.type in zewnetrzne }.productName + ")")
+        }
+    }
+
+    private fun pauzaPoWyjsciu(powod: String) {
+        if (!player.playWhenReady) return
+        LogMowy.dodaj("PAUZA: $powod")
+        player.pause()
+    }
+
     /** Po powrocie internetu: od razu próba wznowienia, bez czekania na kolejną próbę. */
     private val siec = object : android.net.ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: android.net.Network) {
@@ -898,6 +935,8 @@ class RadioService : MediaLibraryService() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(siec) }
+        runCatching { auto.type.removeObserver(obserwatorAuta) }
+        runCatching { getSystemService(AudioManager::class.java).unregisterAudioDeviceCallback(urzadzenia) }
         if (trybSpotify) zakonczSpotify()
         anulujPrzenikanie()
         wygaszany?.release(); wygaszany = null

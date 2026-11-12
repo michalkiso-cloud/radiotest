@@ -12,8 +12,8 @@ android {
         applicationId = "com.michal.radiotest"
         minSdk = 29
         targetSdk = 35
-        versionCode = 30
-        versionName = "3.0"
+        versionCode = 31
+        versionName = "3.1"
         manifestPlaceholders["redirectSchemeName"] = "radiotest"
         manifestPlaceholders["redirectHostName"] = "callback"
         manifestPlaceholders["redirectPathPattern"] = ".*"
@@ -58,6 +58,8 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-session:$media3")
     implementation("com.google.guava:guava:33.3.1-android")
+    // wykrycie rozłączenia Android Auto
+    implementation("androidx.car.app:app:1.4.0")
 
     // YAMNet (wykrywanie mowy) przez LiteRT; model pobierany w GitHub Actions do assets
     implementation("com.google.ai.edge.litert:litert:1.0.1")
