@@ -172,26 +172,28 @@ class MainActivity : ComponentActivity() {
         var szansa by remember { mutableStateOf<Stacja?>(null) }
         var doUsuniecia by remember { mutableStateOf<Stacja?>(null) }
 
-        Scaffold(
-            floatingActionButton = {
-                if (zakladka == 0 && !pokazLog) FloatingActionButton(onClick = { nowa = true }) {
-                    Icon(Icons.Filled.Add, contentDescription = "Dodaj stację")
-                }
-            }
-        ) { pad ->
+        Scaffold { pad ->
             Column(Modifier.padding(pad).fillMaxSize()) {
-                Naglowek()
-                if (pokazLog) { EkranLogu(); return@Column }
-                TabRow(selectedTabIndex = zakladka) {
+                // u góry zakładki (albo log), na dole panel ze stacją i sterowaniem – pod kciukiem
+                if (!pokazLog) TabRow(selectedTabIndex = zakladka) {
                     Tab(zakladka == 0, { zakladka = 0 }, text = { Text("Stacje") })
                     Tab(zakladka == 1, { zakladka = 1 }, text = { Text("Losowanie") })
                     Tab(zakladka == 2, { zakladka = 2 }, text = { Text("Mowa") })
                 }
-                when (zakladka) {
-                    0 -> ListaStacji(onEdytuj = { edycja = it }, onUsun = { doUsuniecia = it })
-                    1 -> ZakladkaLosowania(onSzansa = { szansa = it }, onDodaj = { wybor = true })
-                    else -> ZakladkaMowy()
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    if (pokazLog) EkranLogu()
+                    else when (zakladka) {
+                        0 -> ListaStacji(onEdytuj = { edycja = it }, onUsun = { doUsuniecia = it })
+                        1 -> ZakladkaLosowania(onSzansa = { szansa = it }, onDodaj = { wybor = true })
+                        else -> ZakladkaMowy()
+                    }
+                    if (zakladka == 0 && !pokazLog) FloatingActionButton(
+                        onClick = { nowa = true },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+                    ) { Icon(Icons.Filled.Add, contentDescription = "Dodaj stację") }
                 }
+                HorizontalDivider()
+                Naglowek()
             }
         }
 
@@ -280,7 +282,7 @@ class MainActivity : ComponentActivity() {
                 Modifier.padding(end = 12.dp, top = 6.dp),
                 thickness = 2.dp, color = MaterialTheme.colorScheme.primary
             )
-            if (!pokazLog) Column(
+            Column(
                 Modifier.fillMaxWidth().padding(end = 12.dp, top = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -318,7 +320,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun ListaStacji(onEdytuj: (Stacja) -> Unit, onUsun: (Stacja) -> Unit) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp),
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(magazyn.stacje, key = { it.id }) { s ->
                 val gra = s.nazwa == stacja
