@@ -491,6 +491,14 @@ class RadioService : MediaLibraryService() {
         override fun run() {
             handler.postDelayed(this, TIK_S * 1000L)
             sprawdzZawieszenie()
+            // nasłuch RMF24 bez nowego bloku przez 60 s (np. zawieszony po utracie sieci): restart
+            if (nasluch.dziala && player.isPlaying &&
+                System.currentTimeMillis() - nasluch.ostatniBlokMs > 60_000) {
+                LogMowy.dodaj("Nasłuch RMF24 zawieszony od 60 s, uruchamiam ponownie")
+                przerwijRmf()
+                nasluch.stop()
+                nasluchStart()
+            }
             if (!StanLosowania.losujeTeraz(this@RadioService) ||
                 !StanLosowania.trybAuto(this@RadioService) || !player.isPlaying) return
             // czas względny: minuty, gdy gra RMF24, się nie liczą

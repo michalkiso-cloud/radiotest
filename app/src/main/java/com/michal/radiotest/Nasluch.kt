@@ -139,6 +139,8 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
     })
 
     val dziala get() = player != null
+    /** Czas ostatniego bloku (albo startu) – do wykrywania zawieszonego strumienia RMF24. */
+    @Volatile var ostatniBlokMs = 0L
 
     fun start() {
         if (player != null) return
@@ -166,6 +168,7 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
         p.prepare()
         p.play()
         player = p
+        ostatniBlokMs = System.currentTimeMillis()
         resetuj()
         LogMowy.aktywny.value = true
         LogMowy.dodaj("Nasłuch RMF24: start")
@@ -316,6 +319,7 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
             x.size / SR.toFloat())
         glowny.post {
             LogMowy.werdykt.value = w
+            ostatniBlokMs = System.currentTimeMillis()
             naBlok(b)
         }
         LogMowy.dodaj(String.format(Locale.US, "blok: mowa %.2f | muzyka %.2f | %s | werdykt: %s",
