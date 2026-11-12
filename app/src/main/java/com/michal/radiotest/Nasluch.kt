@@ -14,6 +14,8 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.RenderersFactory
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.MediaCodecAudioRenderer
@@ -156,6 +158,11 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
                 false
             )
             .setWakeMode(C.WAKE_MODE_NETWORK)
+            // przedstawia się jak mpv ze skryptu: serwer RMF wstawia reklamy
+            // (prawdopodobnie) tylko odbiorcom rozpoznanym jako aplikacja mobilna
+            .setMediaSourceFactory(DefaultMediaSourceFactory(
+                DefaultHttpDataSource.Factory().setUserAgent("libmpv")
+                    .setAllowCrossProtocolRedirects(true)))
             .build()
         p.volume = 0f
         p.addListener(object : Player.Listener {

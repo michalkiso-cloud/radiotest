@@ -325,7 +325,7 @@ class MainActivity : ComponentActivity() {
             items(magazyn.stacje, key = { it.id }) { s ->
                 val gra = s.nazwa == stacja
                 Card(
-                    colors = if (gra) CardDefaults.cardColors(containerColor = ZIELONY) else CardDefaults.cardColors(),
+                    colors = if (gra) CardDefaults.cardColors(containerColor = ZIELONY, contentColor = Color.White) else CardDefaults.cardColors(),
                     modifier = Modifier.fillMaxWidth().clickable { graj(s) }
                 ) {
                     Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
@@ -338,7 +338,7 @@ class MainActivity : ComponentActivity() {
                                 style = MaterialTheme.typography.bodySmall)
                         }
                         if (gra) IconButton(onClick = { stop() }) {
-                            Box(Modifier.size(16.dp).background(MaterialTheme.colorScheme.onSurface))
+                            Box(Modifier.size(16.dp).background(Color.White))
                         } else IconButton(onClick = { graj(s) }) { Icon(Icons.Filled.PlayArrow, "Start") }
                         if (s.adres != SPOTIFY_ADRES)
                             IconButton(onClick = { onEdytuj(s) }) { Icon(Icons.Filled.Edit, "Edytuj") }
