@@ -171,7 +171,8 @@ class RadioService : MediaLibraryService() {
     private fun przerwijRmf() {
         handler.removeCallbacks(krokPrzejscia)
         rmf.stop()
-        if (trybRmf && trybSpotify) naSpotify { it.playerApi.resume() }
+        // Spotify NIE jest tu wznawiane: przy pauzie (np. rozłączenie Bluetooth) ma zostać
+        // zatrzymane, a przy zmianie stacji/wznowieniu zajmuje się nim graj() i obsługa pauzy
         val byl = trybRmf
         trybRmf = false
         LogMowy.graRmf.value = false
