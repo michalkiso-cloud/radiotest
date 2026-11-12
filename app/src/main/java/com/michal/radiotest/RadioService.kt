@@ -186,6 +186,7 @@ class RadioService : MediaLibraryService() {
     /** Przerywa RMF24 bez przejścia (pauza, stop, zmiana stacji). */
     private fun przerwijRmf() {
         handler.removeCallbacks(krokPrzejscia)
+        zwolnijWygaszany()
         rmf.stop()
         // Spotify NIE jest tu wznawiane: przy pauzie (np. rozłączenie Bluetooth) ma zostać
         // zatrzymane, a przy zmianie stacji/wznowieniu zajmuje się nim graj() i obsługa pauzy
@@ -197,8 +198,16 @@ class RadioService : MediaLibraryService() {
     }
 
     private var krokPrzejscia = Runnable {}
+    /** Stary odtwarzacz z przenikania; musi zostać zwolniony, nawet gdy przejście przerwano. */
+    private var wygaszany: ExoPlayer? = null
+    private fun zwolnijWygaszany() {
+        wygaszany?.let { it.release(); LogMowy.dodaj("Przenikanie przerwane, stary odtwarzacz zatrzymany") }
+        wygaszany = null
+    }
+
     private fun przejscie(koniec: () -> Unit = {}, krok: (Float) -> Unit) {
         handler.removeCallbacks(krokPrzejscia)
+        zwolnijWygaszany()
         val kroki = 20
         var i = 0
         krokPrzejscia = object : Runnable {
@@ -707,12 +716,14 @@ class RadioService : MediaLibraryService() {
         LogMowy.dodaj("Przenikanie stacji")
         val g = stary.volume
         przejscie(koniec = {
+            wygaszany = null
             stary.release()
             nowy.setAudioAttributes(atrybuty, false)
         }) { t ->
             stary.volume = g * (1 - t)
             nowy.volume = t
         }
+        wygaszany = stary   // po przejscie(), które zwalnia poprzedni wygaszany
         nasluchStart()
     }
 
@@ -889,6 +900,7 @@ class RadioService : MediaLibraryService() {
         runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(siec) }
         if (trybSpotify) zakonczSpotify()
         anulujPrzenikanie()
+        wygaszany?.release(); wygaszany = null
         oddajFokus()
         rmf.stop()
         nasluch.zakoncz()
