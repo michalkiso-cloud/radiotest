@@ -280,7 +280,11 @@ class RadioService : MediaLibraryService() {
         .setLoadControl(DefaultLoadControl.Builder()
             .setBufferDurationsMs(30_000, 60_000, 1_500, 10_000)
             .build())
-        .setMediaSourceFactory(DefaultMediaSourceFactory(this)
+        // przedstawia się jak mpv ze skryptu (mniej wstawianych reklam); DefaultDataSource
+        // obsługuje też plik ciszy (Spotify)
+        .setMediaSourceFactory(DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(this,
+                androidx.media3.datasource.DefaultHttpDataSource.Factory().setUserAgent("libmpv")
+                    .setAllowCrossProtocolRedirects(true)))
             .setLoadErrorHandlingPolicy(object : DefaultLoadErrorHandlingPolicy() {
                 override fun getMinimumLoadableRetryCount(dataType: Int) = 8
                 override fun getRetryDelayMsFor(info: LoadErrorHandlingPolicy.LoadErrorInfo) =
