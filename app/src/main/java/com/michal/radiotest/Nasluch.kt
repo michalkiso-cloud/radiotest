@@ -161,7 +161,7 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
             // przedstawia się jak nagrywanie w skrypcie (Python urllib): serwer RMF wstawia
             // reklamy (prawdopodobnie) tylko odbiorcom rozpoznanym jako aplikacja/odtwarzacz
             .setMediaSourceFactory(DefaultMediaSourceFactory(
-                DefaultHttpDataSource.Factory().setUserAgent("Python-urllib/3.12")
+                DefaultHttpDataSource.Factory().setUserAgent(UA_PYTHON)
                     .setAllowCrossProtocolRedirects(true)))
             .build()
         p.volume = 0f

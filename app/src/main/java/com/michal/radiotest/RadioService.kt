@@ -46,6 +46,9 @@ const val KOMENDA_STOP = "stop"          // przycisk Stop w powiadomieniu
 private const val ID_KORZEN = "korzen"
 private const val ID_LOSUJ = "losuj"
 private const val TIK_S = 5
+/** Stacje, które łączą się jak Python (bez wstawianych reklam): Disco Radio (revma), Eska 2 (smcdn). */
+private val HOSTY_JAK_PYTHON = listOf("revma.com", "smcdn.pl")
+const val UA_PYTHON = "Python-urllib/3.12"
 private val WZNOW_ODSTEPY_S = longArrayOf(2, 5, 15, 60, 120)
 // przełączanie na RMF24 (jak w skrypcie)
 private const val COFNIJ_BLOKOW = 1
@@ -280,11 +283,16 @@ class RadioService : MediaLibraryService() {
         .setLoadControl(DefaultLoadControl.Builder()
             .setBufferDurationsMs(30_000, 60_000, 1_500, 10_000)
             .build())
-        // przedstawia się jak mpv ze skryptu (mniej wstawianych reklam); DefaultDataSource
-        // obsługuje też plik ciszy (Spotify)
+        // Disco Radio i Eska 2 przedstawiają się jak Python (jak RMF24): tak serwery nie wstawiają
+        // reklam; pozostałe stacje zwykle. DefaultDataSource obsługuje też plik ciszy (Spotify).
         .setMediaSourceFactory(DefaultMediaSourceFactory(androidx.media3.datasource.DefaultDataSource.Factory(this,
-                androidx.media3.datasource.DefaultHttpDataSource.Factory().setUserAgent("libmpv")
-                    .setAllowCrossProtocolRedirects(true)))
+                androidx.media3.datasource.ResolvingDataSource.Factory(
+                    androidx.media3.datasource.DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
+                ) { spec ->
+                    val host = spec.uri.host ?: ""
+                    if (HOSTY_JAK_PYTHON.any { host.endsWith(it) })
+                        spec.withAdditionalHeaders(mapOf("User-Agent" to UA_PYTHON)) else spec
+                }))
             .setLoadErrorHandlingPolicy(object : DefaultLoadErrorHandlingPolicy() {
                 override fun getMinimumLoadableRetryCount(dataType: Int) = 8
                 override fun getRetryDelayMsFor(info: LoadErrorHandlingPolicy.LoadErrorInfo) =
