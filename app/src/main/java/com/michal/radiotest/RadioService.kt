@@ -338,11 +338,6 @@ class RadioService : MediaLibraryService() {
         val poziom = if (w.poziom.isNaN()) "mierzę…" else String.format(Locale.US, "%.1f LUFS", w.poziom)
         if (!w.poziom.isNaN()) pamiecGlosnosci[s.id] = w.wzmocnienie
         StanGlosnosci.opis.value = dopiszRmf("${s.nazwa}: poziom $poziom, wzmocnienie ${fmt(w.wzmocnienie)}")
-        if (!zalogowanoGlosnosc && !w.poziom.isNaN() &&
-            System.currentTimeMillis() - startGlosnosciMs > 30_000) {
-            zalogowanoGlosnosc = true
-            LogMowy.dodaj("Głośność ${s.nazwa}: poziom $poziom, wzmocnienie ${fmt(w.wzmocnienie)}")
-        }
     }
 
     private val sluchacz = object : Player.Listener {
