@@ -15,6 +15,10 @@ import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Metadata
 import androidx.media3.extractor.metadata.icy.IcyInfo
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import android.media.AudioManager
 import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
@@ -248,7 +252,19 @@ class RadioService : MediaLibraryService() {
         override fun isCurrentMediaItemLive() = true
     }
 
+    // Bufor jak w skrypcie (mpv cache-pause-wait=10): start od razu, ale po
+    // pierwszym przerwaniu radio czeka na 10 s zapasu, żeby kolejne krótkie
+    // problemy z siecią nie przerywały grania. Pobieranie ponawiane po cichu.
     private fun nowyPlayer(fokus: Boolean): ExoPlayer = ExoPlayer.Builder(this)
+        .setLoadControl(DefaultLoadControl.Builder()
+            .setBufferDurationsMs(30_000, 60_000, 1_500, 10_000)
+            .build())
+        .setMediaSourceFactory(DefaultMediaSourceFactory(this)
+            .setLoadErrorHandlingPolicy(object : DefaultLoadErrorHandlingPolicy() {
+                override fun getMinimumLoadableRetryCount(dataType: Int) = 8
+                override fun getRetryDelayMsFor(info: LoadErrorHandlingPolicy.LoadErrorInfo) =
+                    minOf(info.errorCount * 1000L, 3000L)
+            }))
         .setAudioAttributes(atrybuty, false)
         .setHandleAudioBecomingNoisy(true)
         .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -821,7 +837,7 @@ class RadioService : MediaLibraryService() {
         }
     }
 
-    /** Czuwanie: strumień zawieszony w buforowaniu dłużej niż 30 s jest uruchamiany od nowa. */
+    /** Czuwanie: strumień zawieszony w buforowaniu dłużej niż 45 s jest uruchamiany od nowa. */
     private var buforOd = 0L
     private fun sprawdzZawieszenie() {
         if (trybSpotify || !player.playWhenReady || player.playbackState != Player.STATE_BUFFERING) {
@@ -829,7 +845,7 @@ class RadioService : MediaLibraryService() {
         }
         val teraz = System.currentTimeMillis()
         if (buforOd == 0L) buforOd = teraz
-        else if (teraz - buforOd > 30_000) {
+        else if (teraz - buforOd > 45_000) {
             buforOd = 0L
             LogMowy.dodaj("Strumień zawieszony od 30 s, łączę ponownie")
             handler.post(ponow)
