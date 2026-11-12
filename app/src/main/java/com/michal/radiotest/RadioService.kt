@@ -336,6 +336,7 @@ class RadioService : MediaLibraryService() {
             .setCustomLayout(ImmutableList.of(stop))
             .build()
         handler.postDelayed(tik, TIK_S * 1000L)
+        runCatching { getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(siec) }
     }
 
     // ---------- Sesja: aplikacja, powiadomienie, Android Auto ----------
@@ -489,6 +490,7 @@ class RadioService : MediaLibraryService() {
     private val tik = object : Runnable {
         override fun run() {
             handler.postDelayed(this, TIK_S * 1000L)
+            sprawdzZawieszenie()
             if (!StanLosowania.losujeTeraz(this@RadioService) ||
                 !StanLosowania.trybAuto(this@RadioService) || !player.isPlaying) return
             // czas względny: minuty, gdy gra RMF24, się nie liczą
@@ -665,7 +667,12 @@ class RadioService : MediaLibraryService() {
     }
 
     private val ponow = Runnable {
-        if (player.mediaItemCount > 0) { player.prepare(); player.play() }
+        if (player.mediaItemCount > 0 && !trybSpotify) {
+            LogMowy.dodaj("Ponowne łączenie ze stacją (próba $proby)")
+            player.prepare(); player.play()
+            wezFokus()
+            nasluchStart()   // nasłuch RMF24 zatrzymał się przy błędzie strumienia
+        }
     }
 
     // ---------- Spotify ----------
@@ -784,10 +791,41 @@ class RadioService : MediaLibraryService() {
     }
 
     /** Zerwany strumień: ponowne próby po 2, 5, 15, 60 i 120 s. */
+    /** Kolejne próby po 2, 5, 15, 60, 120 s, potem co 2 min bez końca (np. długi brak zasięgu). */
     private fun wznow() {
-        if (proby >= WZNOW_ODSTEPY_S.size) return
-        handler.postDelayed(ponow, WZNOW_ODSTEPY_S[proby] * 1000)
+        val s = WZNOW_ODSTEPY_S[minOf(proby, WZNOW_ODSTEPY_S.size - 1)]
+        handler.removeCallbacks(ponow)
+        handler.postDelayed(ponow, s * 1000)
         proby++
+    }
+
+    /** Po powrocie internetu: od razu próba wznowienia, bez czekania na kolejną próbę. */
+    private val siec = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: android.net.Network) {
+            handler.post {
+                if (player.playWhenReady && player.mediaItemCount > 0 && !trybSpotify &&
+                    (player.playerError != null || player.playbackState == Player.STATE_IDLE)) {
+                    LogMowy.dodaj("Internet wrócił, wznawiam strumień")
+                    handler.removeCallbacks(ponow)
+                    handler.post(ponow)
+                }
+            }
+        }
+    }
+
+    /** Czuwanie: strumień zawieszony w buforowaniu dłużej niż 30 s jest uruchamiany od nowa. */
+    private var buforOd = 0L
+    private fun sprawdzZawieszenie() {
+        if (trybSpotify || !player.playWhenReady || player.playbackState != Player.STATE_BUFFERING) {
+            buforOd = 0L; return
+        }
+        val teraz = System.currentTimeMillis()
+        if (buforOd == 0L) buforOd = teraz
+        else if (teraz - buforOd > 30_000) {
+            buforOd = 0L
+            LogMowy.dodaj("Strumień zawieszony od 30 s, łączę ponownie")
+            handler.post(ponow)
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = sesja
@@ -798,6 +836,7 @@ class RadioService : MediaLibraryService() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(siec) }
         if (trybSpotify) zakonczSpotify()
         anulujPrzenikanie()
         oddajFokus()
