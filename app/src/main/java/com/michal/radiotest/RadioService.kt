@@ -175,7 +175,6 @@ class RadioService : MediaLibraryService() {
         if (!trybRmf) return
         trybRmf = false
         LogMowy.dodaj("← powrót do radia głównego")
-        LogMowy.dodaj("Głośność " + opisRmf())
         odswiezOpis()
         if (trybSpotify) naSpotify { it.playerApi.resume() }
         przejscie(koniec = { rmf.stop(); LogMowy.graRmf.value = false }) { t ->
