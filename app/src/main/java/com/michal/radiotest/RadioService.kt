@@ -318,10 +318,26 @@ class RadioService : MediaLibraryService() {
             }
         }
         override fun onPlaybackStateChanged(state: Int) {
+            // log zacięć radia głównego (po tym, jak już grało)
+            if (state == Player.STATE_BUFFERING && grałoOk && player.playWhenReady && !trybSpotify) {
+                zacieOd = System.currentTimeMillis()
+                LogMowy.dodaj("Radio główne: zacięcie sieci, buforuję (czekam na 10 s zapasu)")
+            }
+            if (state == Player.STATE_READY && zacieOd > 0) {
+                LogMowy.dodaj(String.format(Locale.US, "Radio główne: gra dalej po %.0f s",
+                    (System.currentTimeMillis() - zacieOd) / 1000.0))
+                zacieOd = 0L
+            }
+            if (state == Player.STATE_READY) grałoOk = true
+            if (state == Player.STATE_IDLE) { grałoOk = false; zacieOd = 0L }
             if (state == Player.STATE_IDLE) { przerwijRmf(); nasluch.stop(); if (!pauzaRozmowa) oddajFokus() }
             if (state == Player.STATE_IDLE && trybSpotify) zakonczSpotify()
         }
     }
+
+    private var grałoOk = false
+    private var zacieOd = 0L
+    private var ostCiecie = ""
 
     /** Po przejęciu dźwięku przez inną aplikację (np. dźwięk powiadomienia) wznawia, gdy ona skończy. */
     private var probyFokus = 0
@@ -512,6 +528,16 @@ class RadioService : MediaLibraryService() {
                 System.currentTimeMillis() - nasluch.ostatniBlokMs > 60_000) {
                 LogMowy.dodaj("Nasłuch RMF24 zawieszony od 60 s, uruchamiam ponownie")
                 przerwijRmf()
+                nasluch.stop()
+                nasluchStart()
+            }
+            // jak w skrypcie: o x:28 i x:58 (przed wiadomościami) świeży nasłuch RMF24
+            val kal = java.util.Calendar.getInstance()
+            val min = kal.get(java.util.Calendar.MINUTE)
+            val klucz = "${kal.get(java.util.Calendar.DAY_OF_YEAR)}-${kal.get(java.util.Calendar.HOUR_OF_DAY)}-$min"
+            if ((min == 28 || min == 58) && ostCiecie != klucz && nasluch.dziala && !trybRmf && player.isPlaying) {
+                ostCiecie = klucz
+                LogMowy.dodaj(String.format(Locale.US, "Godzina x:%02d – nowy nasłuch RMF24", min))
                 nasluch.stop()
                 nasluchStart()
             }
