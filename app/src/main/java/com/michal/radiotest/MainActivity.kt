@@ -179,13 +179,15 @@ class MainActivity : ComponentActivity() {
                     Tab(zakladka == 0, { zakladka = 0 }, text = { Text("Stacje") })
                     Tab(zakladka == 1, { zakladka = 1 }, text = { Text("Losowanie") })
                     Tab(zakladka == 2, { zakladka = 2 }, text = { Text("Mowa") })
+                    Tab(zakladka == 3, { zakladka = 3 }, text = { Text("Głośność", maxLines = 1) })
                 }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     if (pokazLog) EkranLogu()
                     else when (zakladka) {
                         0 -> ListaStacji(onEdytuj = { edycja = it }, onUsun = { doUsuniecia = it })
                         1 -> ZakladkaLosowania(onSzansa = { szansa = it }, onDodaj = { wybor = true })
-                        else -> ZakladkaMowy()
+                        2 -> ZakladkaMowy()
+                        else -> ZakladkaGlosnosci()
                     }
                     if (zakladka == 0 && !pokazLog) FloatingActionButton(
                         onClick = { nowa = true },
@@ -586,6 +588,56 @@ class MainActivity : ComponentActivity() {
                         color = if (w.contains("| mowa |")) Color(0xFF43A047) else Color.Unspecified)
                 }
             }
+        }
+    }
+
+    @Composable
+    private fun ZakladkaGlosnosci() {
+        val c = this@MainActivity
+        var wlaczone by remember { mutableStateOf(UstGlosnosci.wlaczone(c)) }
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                Modifier.fillMaxWidth().clickable { wlaczone = !wlaczone; UstGlosnosci.ustawWlaczone(c, wlaczone) },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = wlaczone, onCheckedChange = { wlaczone = it; UstGlosnosci.ustawWlaczone(c, it) })
+                Text("Wyrównywanie głośności")
+            }
+            Text(StanGlosnosci.opis.value, style = MaterialTheme.typography.titleSmall)
+            Text("Pomiar w LUFS (0 = maksimum, mowa RMF24 ok. −8,8). Zmiany wchodzą w ciągu kilku sekund. " +
+                "Limiter zawsze pilnuje, żeby nie było przesteru.", style = MaterialTheme.typography.bodySmall)
+            Krokomierz("Cel (LUFS)", UstGlosnosci.cel(c), 0.5f, -30f, -3f) { UstGlosnosci.ustawCel(c, it) }
+            Krokomierz("Maks. podgłośnienie (dB)", UstGlosnosci.maks(c), 0.5f, 0f, 6f) { UstGlosnosci.ustawMaks(c, it) }
+            HorizontalDivider(Modifier.padding(vertical = 6.dp))
+            Text("Korekty ręczne (dB), dodawane do automatu", style = MaterialTheme.typography.titleSmall)
+            magazyn.stacje.filter { it.adres != SPOTIFY_ADRES }.forEach { st ->
+                Krokomierz(st.nazwa, UstGlosnosci.korekta(c, st.id), 0.5f, -20f, 6f) {
+                    UstGlosnosci.ustawKorekte(c, st.id, it)
+                }
+            }
+            Krokomierz("RMF24 (mowa)", UstGlosnosci.korekta(c, UstGlosnosci.ID_RMF), 0.5f, -20f, 6f) {
+                UstGlosnosci.ustawKorekte(c, UstGlosnosci.ID_RMF, it)
+            }
+            Text("Spotify: włącz „Normalizuj głośność” w ustawieniach aplikacji Spotify.",
+                style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    /** Wartość zmieniana przyciskami − / + (wygodne kciukiem, działa też dla liczb ujemnych). */
+    @Composable
+    private fun Krokomierz(etykieta: String, wartosc: Float, krok: Float, min: Float, maks: Float, zapisz: (Float) -> Unit) {
+        var v by remember(etykieta) { mutableStateOf(wartosc) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(etykieta, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            OutlinedButton(onClick = { v = (v - krok).coerceIn(min, maks); zapisz(v) },
+                contentPadding = PaddingValues(0.dp), modifier = Modifier.size(44.dp, 36.dp)) { Text("−") }
+            Text(String.format(java.util.Locale.US, "%+.1f", v), Modifier.width(64.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontWeight = FontWeight.Medium)
+            OutlinedButton(onClick = { v = (v + krok).coerceIn(min, maks); zapisz(v) },
+                contentPadding = PaddingValues(0.dp), modifier = Modifier.size(44.dp, 36.dp)) { Text("+") }
         }
     }
 

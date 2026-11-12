@@ -264,7 +264,19 @@ class RadioService : MediaLibraryService() {
     // Bufor jak w skrypcie (mpv cache-pause-wait=10): start od razu, ale po
     // pierwszym przerwaniu radio czeka na 10 s zapasu, żeby kolejne krótkie
     // problemy z siecią nie przerywały grania. Pobieranie ponawiane po cichu.
-    private fun nowyPlayer(fokus: Boolean): ExoPlayer = ExoPlayer.Builder(this)
+    private fun nowyPlayer(fokus: Boolean): ExoPlayer {
+      val w = Wyrownywacz()
+      val sink = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(this)
+          .setAudioProcessors(arrayOf(ProcesorGlosnosci(w))).build()
+      // tor dźwięku z wyrównywaniem głośności (etap 4) + metadane ICY (tytuły)
+      val renderery = androidx.media3.exoplayer.RenderersFactory { h, _, audio, _, meta ->
+          arrayOf(
+              androidx.media3.exoplayer.audio.MediaCodecAudioRenderer(this,
+                  androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT, h, audio, sink),
+              androidx.media3.exoplayer.metadata.MetadataRenderer(meta, h.looper)
+          )
+      }
+      return ExoPlayer.Builder(this, renderery)
         .setLoadControl(DefaultLoadControl.Builder()
             .setBufferDurationsMs(30_000, 60_000, 1_500, 10_000)
             .build())
@@ -277,7 +289,59 @@ class RadioService : MediaLibraryService() {
         .setAudioAttributes(atrybuty, false)
         .setHandleAudioBecomingNoisy(true)
         .setWakeMode(C.WAKE_MODE_NETWORK)
-        .build()
+        .build().also { wyrownywacze[it] = w }
+    }
+
+    // ---------- Głośność (etap 4) ----------
+    private val wyrownywacze = java.util.WeakHashMap<ExoPlayer, Wyrownywacz>()
+    /** Ostatnie wzmocnienie każdej stacji: powrót do stacji startuje blisko właściwego poziomu. */
+    private val pamiecGlosnosci = HashMap<String, Float>()
+    private var zalogowanoGlosnosc = false
+    private var startGlosnosciMs = 0L
+
+    private fun ustawWyrownywacz(w: Wyrownywacz, id: String) {
+        w.wlaczone = UstGlosnosci.wlaczone(this)
+        w.cel = UstGlosnosci.cel(this)
+        w.maks = UstGlosnosci.maks(this)
+        w.korekta = UstGlosnosci.korekta(this, id)
+    }
+
+    /** Nowa stacja w odtwarzaczu p: pomiar od zera. */
+    private fun startGlosnosci(p: ExoPlayer, s: Stacja?) {
+        val w = wyrownywacze[p] ?: return
+        val id = s?.id ?: return
+        ustawWyrownywacz(w, id)
+        w.reset(pamiecGlosnosci[id] ?: w.korekta)
+        zalogowanoGlosnosc = false
+        startGlosnosciMs = System.currentTimeMillis()
+    }
+
+    /** Co tik: ustawienia z zakładki Głośność, podgląd, jednorazowy wpis w logu. */
+    private fun odswiezGlosnosc() {
+        val s = obecna
+        rmf.wyr.also { ustawWyrownywacz(it, UstGlosnosci.ID_RMF) }
+        if (s == null || trybSpotify) {
+            StanGlosnosci.opis.value = if (trybSpotify) "Spotify: wyrównuje samo Spotify (Normalizuj głośność)" else "—"
+            return
+        }
+        val w = wyrownywacze[player] ?: return
+        ustawWyrownywacz(w, s.id)
+        val fmt = { v: Float -> String.format(Locale.US, "%+.1f dB", v) }
+        val poziom = if (w.poziom.isNaN()) "mierzę…" else String.format(Locale.US, "%.1f LUFS", w.poziom)
+        if (!w.poziom.isNaN()) pamiecGlosnosci[s.id] = w.wzmocnienie
+        var opis = "${s.nazwa}: poziom $poziom, wzmocnienie ${fmt(w.wzmocnienie)}"
+        if (trybRmf) {
+            val r = rmf.wyr
+            val pr = if (r.poziom.isNaN()) "mierzę…" else String.format(Locale.US, "%.1f LUFS", r.poziom)
+            opis += "\nRMF24: poziom $pr, wzmocnienie ${fmt(r.wzmocnienie)}"
+        }
+        StanGlosnosci.opis.value = opis
+        if (!zalogowanoGlosnosc && !w.poziom.isNaN() &&
+            System.currentTimeMillis() - startGlosnosciMs > 30_000) {
+            zalogowanoGlosnosc = true
+            LogMowy.dodaj("Głośność ${s.nazwa}: poziom $poziom, wzmocnienie ${fmt(w.wzmocnienie)}")
+        }
+    }
 
     private val sluchacz = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
@@ -534,6 +598,7 @@ class RadioService : MediaLibraryService() {
         override fun run() {
             handler.postDelayed(this, TIK_S * 1000L)
             sprawdzZawieszenie()
+            odswiezGlosnosc()
             // nasłuch RMF24 bez nowego bloku przez 60 s (np. zawieszony po utracie sieci): restart
             if (nasluch.dziala && player.isPlaying &&
                 System.currentTimeMillis() - nasluch.ostatniBlokMs > 60_000) {
@@ -650,6 +715,7 @@ class RadioService : MediaLibraryService() {
         player.setAudioAttributes(atrybuty, false)
         player.volume = 0f
         player.repeatMode = Player.REPEAT_MODE_OFF
+        startGlosnosci(player, obecna)
         val p = player
         p.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -671,6 +737,7 @@ class RadioService : MediaLibraryService() {
         LogMowy.dodaj("Nowa stacja nie ruszyła w 15 s, przełączam bez przenikania")
         val item = n.currentMediaItem
         anulujPrzenikanie()
+        startGlosnosci(player, obecna)
         item?.let { player.setMediaItem(it); player.prepare(); player.play() }
     }
 
@@ -684,6 +751,7 @@ class RadioService : MediaLibraryService() {
     private fun przenikaj(item: MediaItem) {
         val nowy = nowyPlayer(false)
         oczekujacy = nowy
+        startGlosnosci(nowy, obecna)
         nowy.volume = 0f
         nowy.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -698,6 +766,7 @@ class RadioService : MediaLibraryService() {
                 handler.removeCallbacks(przekroczenie)
                 oczekujacy = null
                 nowy.release()
+                startGlosnosci(player, obecna)
                 player.setMediaItem(item); player.prepare(); player.play()
             }
         })

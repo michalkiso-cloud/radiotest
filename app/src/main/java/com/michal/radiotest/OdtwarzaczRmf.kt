@@ -18,6 +18,8 @@ class OdtwarzaczRmf(private val nasluch: Nasluch) {
     @Volatile private var glosnosc = 0f
     private var watek: Thread? = null
     var naCel: (() -> Unit)? = null
+    /** Wyrównywanie głośności RMF24; pomiar trwa przez kolejne wejścia na RMF24. */
+    val wyr = Wyrownywacz()
 
     fun start(od: Long) {
         stop()
@@ -57,6 +59,7 @@ class OdtwarzaczRmf(private val nasluch: Nasluch) {
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
         val dane = ShortArray(1024 * k)
+        wyr.konfiguruj(sr, k)
         var ustawiona = -1f
         try {
             track.setVolume(0f)
@@ -66,6 +69,7 @@ class OdtwarzaczRmf(private val nasluch: Nasluch) {
                 if (glosnosc != ustawiona) { ustawiona = glosnosc; track.setVolume(ustawiona) }
                 val n = nasluch.czytaj(pozycja, dane)
                 if (n == 0) { Thread.sleep(20); continue }
+                wyr.przetworz(dane, n * k)
                 track.write(dane, 0, n * k)
                 pozycja += n
                 if (!zgloszono && pozycja >= cel) {
