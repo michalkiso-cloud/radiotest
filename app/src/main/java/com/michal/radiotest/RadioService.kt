@@ -175,6 +175,7 @@ class RadioService : MediaLibraryService() {
         if (!trybRmf) return
         trybRmf = false
         LogMowy.dodaj("← powrót do radia głównego")
+        LogMowy.dodaj("Głośność " + opisRmf())
         odswiezOpis()
         if (trybSpotify) naSpotify { it.playerApi.resume() }
         przejscie(koniec = { rmf.stop(); LogMowy.graRmf.value = false }) { t ->
@@ -307,6 +308,12 @@ class RadioService : MediaLibraryService() {
     }
 
     /** Nowa stacja w odtwarzaczu p: pomiar od zera. */
+    private fun opisRmf(): String {
+        val r = rmf.wyr
+        val pr = if (r.poziom.isNaN()) "mierzę…" else String.format(Locale.US, "%.1f LUFS", r.poziom)
+        return "RMF24: poziom $pr, wzmocnienie " + String.format(Locale.US, "%+.1f dB", r.wzmocnienie)
+    }
+
     private fun startGlosnosci(p: ExoPlayer, s: Stacja?) {
         val w = wyrownywacze[p] ?: return
         val id = s?.id ?: return
@@ -320,8 +327,10 @@ class RadioService : MediaLibraryService() {
     private fun odswiezGlosnosc() {
         val s = obecna
         rmf.wyr.also { ustawWyrownywacz(it, UstGlosnosci.ID_RMF) }
+        val dopiszRmf = { o: String -> if (trybRmf) o + "\n" + opisRmf() else o }
         if (s == null || trybSpotify) {
-            StanGlosnosci.opis.value = if (trybSpotify) "Spotify: wyrównuje samo Spotify (Normalizuj głośność)" else "—"
+            StanGlosnosci.opis.value = dopiszRmf(
+                if (trybSpotify) "Spotify: wyrównuje samo Spotify (Normalizuj głośność)" else "—")
             return
         }
         val w = wyrownywacze[player] ?: return
@@ -329,13 +338,7 @@ class RadioService : MediaLibraryService() {
         val fmt = { v: Float -> String.format(Locale.US, "%+.1f dB", v) }
         val poziom = if (w.poziom.isNaN()) "mierzę…" else String.format(Locale.US, "%.1f LUFS", w.poziom)
         if (!w.poziom.isNaN()) pamiecGlosnosci[s.id] = w.wzmocnienie
-        var opis = "${s.nazwa}: poziom $poziom, wzmocnienie ${fmt(w.wzmocnienie)}"
-        if (trybRmf) {
-            val r = rmf.wyr
-            val pr = if (r.poziom.isNaN()) "mierzę…" else String.format(Locale.US, "%.1f LUFS", r.poziom)
-            opis += "\nRMF24: poziom $pr, wzmocnienie ${fmt(r.wzmocnienie)}"
-        }
-        StanGlosnosci.opis.value = opis
+        StanGlosnosci.opis.value = dopiszRmf("${s.nazwa}: poziom $poziom, wzmocnienie ${fmt(w.wzmocnienie)}")
         if (!zalogowanoGlosnosc && !w.poziom.isNaN() &&
             System.currentTimeMillis() - startGlosnosciMs > 30_000) {
             zalogowanoGlosnosc = true

@@ -179,15 +179,13 @@ class MainActivity : ComponentActivity() {
                     Tab(zakladka == 0, { zakladka = 0 }, text = { Text("Stacje") })
                     Tab(zakladka == 1, { zakladka = 1 }, text = { Text("Losowanie") })
                     Tab(zakladka == 2, { zakladka = 2 }, text = { Text("Mowa") })
-                    Tab(zakladka == 3, { zakladka = 3 }, text = { Text("Głośność", maxLines = 1) })
                 }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     if (pokazLog) EkranLogu()
                     else when (zakladka) {
                         0 -> ListaStacji(onEdytuj = { edycja = it }, onUsun = { doUsuniecia = it })
                         1 -> ZakladkaLosowania(onSzansa = { szansa = it }, onDodaj = { wybor = true })
-                        2 -> ZakladkaMowy()
-                        else -> ZakladkaGlosnosci()
+                        else -> ZakladkaMowy()
                     }
                     if (zakladka == 0 && !pokazLog) FloatingActionButton(
                         onClick = { nowa = true },
@@ -542,7 +540,8 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ZakladkaMowy() {
         var wlaczone by remember { mutableStateOf(UstMowy.wlaczone(this@MainActivity)) }
-        Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(
                 Modifier.fillMaxWidth().clickable {
                     wlaczone = !wlaczone; UstMowy.ustaw(this@MainActivity, wlaczone)
@@ -571,6 +570,8 @@ class MainActivity : ComponentActivity() {
             }
             PoleSekund("Czas przejścia (s): RMF24 i zmiana stacji", UstMowy.czasPrzejscia(this@MainActivity),
                 Modifier.fillMaxWidth()) { UstMowy.ustawCzasPrzejscia(this@MainActivity, it) }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SekcjaGlosnosci()
         }
     }
 
@@ -592,13 +593,11 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun ZakladkaGlosnosci() {
+    private fun SekcjaGlosnosci() {
         val c = this@MainActivity
         var wlaczone by remember { mutableStateOf(UstGlosnosci.wlaczone(c)) }
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Głośność", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Row(
                 Modifier.fillMaxWidth().clickable { wlaczone = !wlaczone; UstGlosnosci.ustawWlaczone(c, wlaczone) },
                 verticalAlignment = Alignment.CenterVertically
