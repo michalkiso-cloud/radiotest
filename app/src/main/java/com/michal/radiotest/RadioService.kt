@@ -83,6 +83,17 @@ class RadioService : MediaLibraryService() {
     // Spotify: gdy gra, ExoPlayer odtwarza ciszę (bez przejmowania fokusu dźwięku),
     // a pauza/stop z aplikacji i powiadomienia są przekazywane do Spotify.
     private var trybSpotify = false
+    private var spotifyPauza = false
+    /** Spotify już grało w tej sesji (żeby nie brać pauzy przed startem za zatrzymanie). */
+    private var spotifyGralo = false
+    /** Spotify zatrzymane z zewnątrz (np. wyjście z auta, rozłączenie Bluetooth): pauzujemy całość,
+     *  żeby nasłuch nie włączył potem RMF24 z głośnika telefonu. */
+    private val sprawdzPauzeSpotify = Runnable {
+        if (spotifyPauza && trybSpotify && !trybRmf && player.playWhenReady) {
+            LogMowy.dodaj("Spotify zatrzymane z zewnątrz → pauza aplikacji")
+            player.pause()
+        }
+    }
     private var spotify: SpotifyAppRemote? = null
     private var spotifyUtwor = ""
 
@@ -114,6 +125,7 @@ class RadioService : MediaLibraryService() {
     private fun sr() = nasluch.srBufora
 
     private fun wejdzNaRmf(ks: Int) {
+        if (!player.playWhenReady) return   // pauza: nigdy nie włączaj RMF24 samo
         val kp = (ks - COFNIJ_BLOKOW).let { if (bloki.containsKey(it)) it else ks }
         val bazowy = bloki[kp] ?: bloki[ks] ?: return
         var start = bazowy.ramkaStart
@@ -130,7 +142,7 @@ class RadioService : MediaLibraryService() {
         odswiezOpis()
         rmf.start(start)
         LogMowy.dodaj(String.format(Locale.US, "→ RMF24 (opóźnienie %.0f s)", rmf.opoznienieS()))
-        if (trybSpotify) naSpotify { it.playerApi.pause() }
+        if (trybSpotify) { spotifyGralo = false; naSpotify { it.playerApi.pause() } }
         glosnoscGlowna = if (trybSpotify) 0f else player.volume
         przejscie { t ->
             rmf.ustawGlosnosc(t)
@@ -676,6 +688,7 @@ class RadioService : MediaLibraryService() {
         handler.removeCallbacks(ponow)
         oddajFokus()     // fokus potrzebny aplikacji Spotify
         trybSpotify = true
+        spotifyGralo = false
         spotifyUtwor = ""
         // cisza w pętli, bez fokusu dźwięku (inaczej Spotify by ją wyciszał i odwrotnie)
         player.setAudioAttributes(atrybuty, false)
@@ -733,6 +746,12 @@ class RadioService : MediaLibraryService() {
                 spotify = r
                 akcja(r)
                 r.playerApi.subscribeToPlayerState().setEventCallback { st ->
+                    spotifyPauza = st.isPaused
+                    if (!st.isPaused) spotifyGralo = true
+                    else if (spotifyGralo && trybSpotify && !trybRmf && player.playWhenReady) {
+                        handler.removeCallbacks(sprawdzPauzeSpotify)
+                        handler.postDelayed(sprawdzPauzeSpotify, 3000)
+                    }
                     val t = st.track ?: return@setEventCallback
                     val tytul = "${t.artist?.name ?: ""} – ${t.name ?: ""}"
                     if (tytul != spotifyUtwor && trybSpotify) {
