@@ -133,6 +133,8 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) {
             zgodaPowiadomienia.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        Synchro.start(this)
+        Synchro.poPrzyjeciu = { if (!isFinishing) recreate() }
         kluczDi = prefs.getString("klucz_di", "") ?: ""
         motyw = prefs.getInt("motyw", 0)
         trybAuto = StanLosowania.trybAuto(this)
@@ -367,9 +369,26 @@ class MainActivity : ComponentActivity() {
                 prefs.edit().putString("klucz_di", kluczDi.trim()).apply()
                 status = "Klucz DI.FM zapisany."
             }) { Text("Zapisz klucz") }
+            SekcjaSynchro()
             if (bateriaOk) Text("Bateria: bez ograniczeń ✓", color = Color(0xFF81C784))
             else OutlinedButton(onClick = { bateria() }) { Text("Ustaw baterię: bez ograniczeń") }
             Text("Wersja ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    @Composable
+    private fun SekcjaSynchro() {
+        var kod by remember { mutableStateOf(Synchro.kod(this@MainActivity)) }
+        Text("Synchronizacja ze stroną", style = MaterialTheme.typography.titleSmall)
+        OutlinedTextField(
+            value = kod, onValueChange = { kod = it.trim() },
+            label = { Text("Kod synchronizacji") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { Synchro.ustawKod(this@MainActivity, kod) }) { Text("Zapisz i synchronizuj") }
+            Text(Synchro.stan.value, style = MaterialTheme.typography.bodySmall)
         }
     }
 
@@ -750,6 +769,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        Synchro.teraz()
         bateriaOk = getSystemService(PowerManager::class.java)
             .isIgnoringBatteryOptimizations(packageName)
     }

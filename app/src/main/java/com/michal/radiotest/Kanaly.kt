@@ -111,6 +111,16 @@ class Magazyn(ctx: Context) {
         return if (suma <= 0) 0.0 else 100 * w / suma
     }
 
+    /** Lista ze strony (synchronizacja): stacje rozpoznawane po adresie, waga 0 = poza losowaniem. */
+    fun zastap(lista: List<Triple<String, String, Double>>) {
+        val stare = stacje.associateBy { it.adres }
+        val nowe = lista.map { (n, a, _) -> Stacja(stare[a]?.id ?: noweId(), n, a) }
+        stacje.clear(); stacje.addAll(nowe)
+        losowanie.clear()
+        lista.forEachIndexed { i, (_, _, w) -> if (w > 0) losowanie.add(Los(nowe[i].id, w)) }
+        zapisz()
+    }
+
     private fun zapisz() {
         val a = JSONArray()
         stacje.forEach { a.put(JSONObject().put("id", it.id).put("nazwa", it.nazwa).put("adres", it.adres)) }

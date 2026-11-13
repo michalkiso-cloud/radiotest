@@ -443,6 +443,7 @@ class RadioService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        Synchro.start(this)
         player = nowyPlayer(true)
         player.addListener(sluchacz)
         val stop = CommandButton.Builder()
