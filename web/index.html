@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.4.1";
+const WERSJA = "web 1.5";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -850,6 +850,8 @@ function rysujStacje() {
   h += `<hr style="margin-top:16px"><h3>Ustawienia</h3>
     <label class="pole">Klucz DI.FM premium</label><input type="password" id="kluczDi" value="${esc(U.kluczDi || "")}" autocomplete="off">
     <p><button class="obr" id="zapiszKlucz">Zapisz klucz</button></p>
+    <label class="opcja"><input type="checkbox" id="pauzaSluch" ${U.pauzaSluchawki ? "checked" : ""}>Pauza po odłączeniu słuchawek (Bluetooth i przewodowych)</label>
+    <p class="male" style="margin-top:0">Przy włączaniu przeglądarka zapyta o mikrofon. Mikrofon nie jest używany, zgoda jest potrzebna tylko do odczytania nazw urządzeń.</p>
     <div style="font-weight:500;margin:10px 0 6px">Spotify</div>
     ${!SP.refresh ? `<button class="obr" id="spPolacz">Połącz ze Spotify</button>` : `
       <select id="spWybor" style="width:100%;padding:11px;border-radius:20px;border:1px solid var(--linia);background:var(--pole);color:var(--fg);font:inherit">
@@ -1006,6 +1008,11 @@ $("#tresc").addEventListener("click", (e) => {
 });
 $("#tresc").addEventListener("change", (e) => {
   const t = e.target;
+  if (t.id === "pauzaSluch") {
+    if (t.checked) zgodaUrzadzenia().then(ok => { U.pauzaSluchawki = ok; t.checked = ok; zapisz(false); sluchawkiStart(); });
+    else { U.pauzaSluchawki = false; zapisz(false); }
+    return;
+  }
   if (t.id === "spWybor") { const p = (spLista || []).find(x => x.uri === t.value); if (p) U.spotify = p; }
   else if (t.id === "autostart") U.autostart = t.checked;
   else if (t.name === "tryb") { U.trybAuto = t.value === "1"; rysuj(); }
@@ -1038,6 +1045,36 @@ if ("mediaSession" in navigator) {
 // do testów z konsoli
 window.radio = { R, naBlok, U };
 
+// ---------- Pauza po odłączeniu słuchawek ----------
+// Bez zgody na mikrofon przeglądarka nie podaje nazw urządzeń, więc opcja prosi o nią raz (mikrofon nie jest używany).
+let wyjscia = null;   // Map id → nazwa
+async function listaWyjsc() {
+  const d = await navigator.mediaDevices.enumerateDevices();
+  return new Map(d.filter(x => x.kind === "audiooutput").map(x => [x.deviceId || x.label, x.label]));
+}
+async function sluchawkiStart() {
+  if (!U.pauzaSluchawki || !navigator.mediaDevices) return;
+  try { wyjscia = await listaWyjsc(); } catch (e) {}
+}
+async function zgodaUrzadzenia() {
+  try { const st = await navigator.mediaDevices.getUserMedia({ audio: true }); st.getTracks().forEach(t => t.stop()); return true; }
+  catch (e) { status("Bez zgody przeglądarka nie pokaże, które słuchawki odłączono."); return false; }
+}
+if (navigator.mediaDevices) navigator.mediaDevices.addEventListener("devicechange", async () => {
+  if (!U.pauzaSluchawki) return;
+  let nowe; try { nowe = await listaWyjsc(); } catch (e) { return; }
+  const stare = wyjscia; wyjscia = nowe;
+  if (!stare) return;
+  const znikly = [...stare.keys()].filter(k => !nowe.has(k));
+  const domStare = stare.get("default") || "", domNowe = nowe.get("default") || "";
+  const zmienionyDomyslny = domStare && domNowe && domStare !== domNowe;
+  if (znikly.length && (zmienionyDomyslny || !stare.has("default"))) {
+    const nazwa = znikly.map(k => stare.get(k)).filter(Boolean).join(", ");
+    dodajLog("Odłączono: " + (nazwa || "urządzenie dźwiękowe") + (graTeraz ? " → pauza" : ""));
+    if (graTeraz) pauza();
+  }
+});
+
 // ---------- Osobne okno (skrót „otwórz jako okno” / zainstalowana strona): wąski rozmiar ----------
 try {
   const okienko = matchMedia("(display-mode: standalone), (display-mode: minimal-ui), (display-mode: window-controls-overlay)").matches;
@@ -1046,7 +1083,7 @@ try {
 
 // ---------- Start ----------
 if (!U.stacje.some(x => x.adres === SP_ADRES) && !U.spDodany) { U.stacje.push({ id: noweId(), nazwa: "Spotify", adres: SP_ADRES }); U.spDodany = true; zapisz(false); }
-ustawMotyw(); rysuj(); pobierzUst();
+ustawMotyw(); rysuj(); pobierzUst(); sluchawkiStart();
 spPowrotZeZgody().then(() => { if (SP.refresh) { spOdtwarzacz().catch(e => dodajLog("Spotify: " + e.message)); rysuj(); } });
 przygotujDzwiek().catch(e => status("Błąd dźwięku: " + e.message));
 if (U.autostart) {
