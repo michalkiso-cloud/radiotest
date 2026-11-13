@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.1";
+const WERSJA = "web 1.2";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -148,17 +148,60 @@ function zapisz(wysylaj = true) {
   try { localStorage.setItem("radio", JSON.stringify(U)); } catch (e) {}
   if (wysylaj) { clearTimeout(zapisTimer); zapisTimer = setTimeout(wyslijUst, 3000); }
 }
-// do schowka nie trafia stan licznika (zmienia się co 5 s)
-function doSchowka() { const k = { ...U }; return JSON.stringify(k); }
-async function wyslijUst() { try { await fetch("/ust", { method: "PUT", body: doSchowka() }); } catch (e) {} }
+// Wspólny format schowka (telefon i strona). Stacje rozpoznawane po adresie, nie po id.
+const ADR_RMF = "rmf24";
+function doSchowka() {
+  const adr = (id) => (stacja(id) || {}).adres;
+  const kor = {}; for (const [id, v] of Object.entries(U.glos.kor)) { if (id === ADR_RMF) kor[ADR_RMF] = v; else if (adr(id)) kor[adr(id)] = v; }
+  return JSON.stringify({ wersja: 1, zmiana: U.zmiana || Date.now(), zrodlo: "strona",
+    stacje: U.stacje.map(s => ({ nazwa: s.nazwa, adres: s.adres, waga: (U.losowanie.find(l => l.id === s.id) || {}).waga || 0 })),
+    kluczDi: U.kluczDi || "", trybAuto: U.trybAuto, autoMin: U.autoMin, wzgledny: U.wzgledny,
+    mowa: { ...U.mowa }, glos: { wl: U.glos.wl, cel: U.glos.cel, maks: U.glos.maks, kor },
+    dzien: U.los.dzienId && adr(U.los.dzienId) ? { data: U.los.dzienData, adres: adr(U.los.dzienId) } : null });
+}
+function zeSchowka(z) {
+  const stare = new Map(U.stacje.map(s => [s.adres, s]));
+  const stacje = [], losowanie = [];
+  for (const x of z.stacje || []) {
+    if (!x.adres) continue;
+    const s = { id: (stare.get(x.adres) || {}).id || noweId(), nazwa: x.nazwa || x.adres, adres: x.adres };
+    stacje.push(s); if (x.waga > 0) losowanie.push({ id: s.id, waga: x.waga });
+  }
+  const id = (a) => (stacje.find(s => s.adres === a) || {}).id;
+  const kor = {}; for (const [a, v] of Object.entries((z.glos || {}).kor || {})) { if (a === ADR_RMF) kor[ADR_RMF] = v; else if (id(a)) kor[id(a)] = v; }
+  U.stacje = stacje; U.losowanie = losowanie;
+  if (z.kluczDi) U.kluczDi = z.kluczDi;
+  for (const k of ["trybAuto", "autoMin", "wzgledny"]) if (z[k] !== undefined) U[k] = z[k];
+  if (z.mowa) U.mowa = { ...U.mowa, ...z.mowa };
+  if (z.glos) U.glos = { ...U.glos, wl: z.glos.wl ?? U.glos.wl, cel: z.glos.cel ?? U.glos.cel, maks: z.glos.maks ?? U.glos.maks, kor };
+  if (z.dzien && id(z.dzien.adres)) { U.los.dzienData = z.dzien.data; U.los.dzienId = id(z.dzien.adres); }
+  U.zmiana = z.zmiana;
+}
+let schowek = true;
+async function wyslijUst(naKoniec) {
+  if (!schowek) return;
+  clearTimeout(zapisTimer); zapisTimer = 0;
+  try { await fetch("/ust", { method: "PUT", body: doSchowka(), keepalive: !!naKoniec }); } catch (e) {}
+}
 async function pobierzUst() {
+  if (!schowek) return;
   try {
     const r = await fetch("/ust", { cache: "no-store" });
+    if (r.status === 501) { schowek = false; return; }
     if (!r.ok) return;
     const z = await r.json();
-    if (z && z.stacje && (z.zmiana || 0) > (U.zmiana || 0)) { U = { ...U, ...z }; zapisz(false); rysuj(); dodajLog("Ustawienia pobrane ze schowka"); }
+    if (z && z.stacje && (z.zmiana || 0) > (U.zmiana || 0)) {
+      zeSchowka(z); zapisz(false); rysuj();
+      dodajLog("Ustawienia pobrane ze schowka" + (z.zrodlo ? " (zapisał: " + z.zrodlo + ")" : ""));
+    } else if (!z || !z.stacje || (z.zmiana || 0) < (U.zmiana || 0)) wyslijUst();
   } catch (e) {}
 }
+// po powrocie na stronę: pobierz; przy wyjściu: wyślij niezapisane zmiany
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") pobierzUst();
+  else if (zapisTimer) { wyslijUst(true); zapisTimer = 0; }
+});
+setInterval(pobierzUst, 5 * 60 * 1000);
 const stacja = (id) => U.stacje.find(s => s.id === id);
 const wLosowaniu = (id) => U.losowanie.some(l => l.id === id);
 function procent(id) { const s = U.losowanie.reduce((a, l) => a + l.waga, 0); const l = U.losowanie.find(l => l.id === id); return s > 0 && l ? 100 * l.waga / s : 0; }
@@ -366,7 +409,7 @@ function wylosuj(bez) {
   for (const l of pula) { r -= l.waga; if (r < 0) return stacja(l.id); }
   return stacja(pula[pula.length - 1].id);
 }
-const dzisiaj = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
+const dzisiaj = () => { const d = new Date(), z = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`; };
 function losuj() {
   if (!U.losowanie.length) { status("Dodaj stacje w zakładce Losowanie."); return; }
   U.los.aktywne = true;
