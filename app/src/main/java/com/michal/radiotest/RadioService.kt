@@ -103,6 +103,8 @@ class RadioService : MediaLibraryService() {
     }
     private var spotify: SpotifyAppRemote? = null
     private var spotifyUtwor = ""
+    /** Okładka bieżącego utworu (radio: z Deezer/iTunes, Spotify: z App Remote); null = logo stacji. */
+    @Volatile private var okladka: ByteArray? = null
 
     // Etap 3: nasłuch RMF24, YAMNet i przełączanie na RMF24 w czasie mowy
     private val nasluch by lazy { Nasluch(this) { naBlok(it) } }
@@ -369,7 +371,9 @@ class RadioService : MediaLibraryService() {
                 val e = metadata.get(i)
                 if (e is IcyInfo && e.title != null && e.title != icyTytul) {
                     icyTytul = e.title!!
+                    okladka = null
                     odswiezOpis()
+                    szukajOkladki(icyTytul)
                 }
             }
         }
@@ -461,6 +465,7 @@ class RadioService : MediaLibraryService() {
         .setMediaId(id)
         .setMediaMetadata(
             MediaMetadata.Builder().setTitle(tytul).setSubtitle(podtytul).setArtist(podtytul)
+                .apply { if (id != ID_LOSUJ) setArtworkData(Okladki.logo(tytul, 128), MediaMetadata.PICTURE_TYPE_FRONT_COVER) }
                 .setIsBrowsable(false).setIsPlayable(true)
                 .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION).build()
         ).build()
@@ -662,8 +667,21 @@ class RadioService : MediaLibraryService() {
             trybSpotify -> spotifyUtwor
             else -> icyTytul
         }.ifEmpty { null }
+        val obraz = if (trybRmf) Okladki.logo("RMF24") else okladka ?: Okladki.logo(s.nazwa)
         return MediaMetadata.Builder().setStation(s.nazwa).setTitle(wiersz1).setArtist(wiersz2)
+            .setArtworkData(obraz, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
             .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION).build()
+    }
+
+    private val watekOkladek = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    private fun szukajOkladki(tytul: String) {
+        watekOkladek.execute {
+            val o = Okladki.szukaj(tytul) ?: return@execute
+            handler.post {
+                if (tytul == icyTytul && !trybSpotify) { okladka = o; odswiezOpis() }
+            }
+        }
     }
 
     private fun odswiezOpis() {
@@ -672,7 +690,8 @@ class RadioService : MediaLibraryService() {
         if (item.mediaId != s.id) return
         val nowy = opis(s)
         val stary = item.mediaMetadata
-        if (stary.artist == nowy.artist && stary.title == nowy.title) return
+        if (stary.artist == nowy.artist && stary.title == nowy.title &&
+            stary.artworkData.contentEquals(nowy.artworkData)) return
         // ten sam adres: odtwarzanie trwa, zmienia się tylko opis
         player.replaceMediaItem(player.currentMediaItemIndex, item.buildUpon().setMediaMetadata(nowy).build())
     }
@@ -686,6 +705,7 @@ class RadioService : MediaLibraryService() {
         val poprzednia = obecna
         obecna = s
         icyTytul = ""
+        okladka = null
         val nr = ++numerGraj
         val gralRadio = !trybSpotify && player.isPlaying && player.volume > 0f
         if (s.adres == SPOTIFY_ADRES) {
@@ -904,7 +924,17 @@ class RadioService : MediaLibraryService() {
                     val tytul = "${t.artist?.name ?: ""} – ${t.name ?: ""}"
                     if (tytul != spotifyUtwor && trybSpotify) {
                         spotifyUtwor = tytul
+                        okladka = null
                         odswiezOpis()
+                        t.imageUri?.let { uri ->
+                            r.imagesApi.getImage(uri, com.spotify.protocol.types.Image.Dimension.LARGE)
+                                .setResultCallback { bmp ->
+                                    watekOkladek.execute {
+                                        val png = Okladki.png(bmp)
+                                        handler.post { if (spotifyUtwor == tytul && trybSpotify) { okladka = png; odswiezOpis() } }
+                                    }
+                                }
+                        }
                     }
                 }
             }
