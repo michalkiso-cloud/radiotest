@@ -388,6 +388,7 @@ class RadioService : MediaLibraryService() {
             }
             LogMowy.dodaj((if (playWhenReady) "Gra" else "PAUZA") + ": $powod")
             handler.removeCallbacks(probaWznowienia)
+            if (!playWhenReady && StanLosowania.losujeTeraz(this@RadioService)) Synchro.wyslijAuto()
             if (!playWhenReady) {
                 // pauza (także po odłączeniu słuchawek): bez RMF24 i bez nasłuchu
                 przerwijRmf()
@@ -512,7 +513,7 @@ class RadioService : MediaLibraryService() {
                     prefs.edit().putBoolean("aktywne", false).apply()
                     Magazyn(this@RadioService).stacja(args.getString("id") ?: "")?.let { graj(it) }
                 }
-                KOMENDA_LOSUJ -> losuj()
+                KOMENDA_LOSUJ -> losujZeSchowkiem()
                 KOMENDA_STOP -> { player.stop(); player.clearMediaItems(); obecna = null }
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -564,7 +565,7 @@ class RadioService : MediaLibraryService() {
     }
 
     private fun uruchomZBiblioteki(id: String) {
-        if (id == ID_LOSUJ) { losuj(); return }
+        if (id == ID_LOSUJ) { losujZeSchowkiem(); return }
         prefs.edit().putBoolean("aktywne", false).apply()
         Magazyn(this).stacja(id)?.let { graj(it) } ?: losuj()
     }
@@ -587,6 +588,9 @@ class RadioService : MediaLibraryService() {
     /** Numer losowania: rośnie przy każdym nowym wylosowaniu stacji. */
     private fun nrLosu() = prefs.getInt("los_nr", 0)
 
+    /** Tryb auto: najpierw stan auto z drugiego urządzenia (strona), potem losowanie. */
+    private fun losujZeSchowkiem() = Synchro.pobierzAuto { losuj() }
+
     private fun losuj() {
         val m = Magazyn(this)
         val e = prefs.edit().putBoolean("aktywne", true)
@@ -606,6 +610,7 @@ class RadioService : MediaLibraryService() {
         }
         e.apply()
         s?.let { graj(it) }
+        if (StanLosowania.trybAuto(this)) Synchro.wyslijAuto()
     }
 
     /** Co 5 s: w trybie auto liczy czas słuchania i po godzinie zmienia stację. */
@@ -644,11 +649,13 @@ class RadioService : MediaLibraryService() {
                 prefs.edit().putInt("auto_sek", 0).putString("auto_id", nowa?.id).putInt("los_nr", nrLosu() + 1).apply()
                 LogMowy.dodaj("Auto: minął czas, zmiana stacji na ${nowa?.nazwa ?: "(brak)"}")
                 nowa?.let { graj(it) }
+                Synchro.wyslijAuto()
             } else {
                 val e = prefs.edit().putInt("auto_sek", sek)
                 val teraz = System.currentTimeMillis()
                 if (teraz - ostatniZapis > 30_000) { e.commit(); ostatniZapis = teraz } else e.apply()
                 if (sek % 60 < TIK_S) odswiezOpis()
+                if (sek % 300 < TIK_S) Synchro.wyslijAuto()
             }
         }
     }
@@ -1042,6 +1049,7 @@ class RadioService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        if (StanLosowania.losujeTeraz(this)) Synchro.wyslijAuto()
         handler.removeCallbacksAndMessages(null)
         runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(siec) }
         runCatching { auto.type.removeObserver(obserwatorAuta) }

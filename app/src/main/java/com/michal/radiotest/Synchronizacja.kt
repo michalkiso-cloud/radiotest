@@ -25,6 +25,7 @@ object Synchro {
     var poPrzyjeciu: (() -> Unit)? = null
 
     private lateinit var app: Context
+    private val watek = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var uruchomione = false
     @Volatile private var przyjmuje = false
 
@@ -71,9 +72,10 @@ object Synchro {
         if (!uruchomione) return
         val kod = kod(app)
         if (kod.isBlank()) { stan.value = "wpisz kod synchronizacji"; return }
-        Thread {
+        watek.execute {
             val wynik = runCatching {
                 val zdalne = pobierz(kod)
+                zdalne?.let { przyjmijAuto(it) }
                 val lokalnaZmiana = p().getLong("zmiana", 0L)
                 val zdalnaZmiana = zdalne?.optLong("zmiana", 0L) ?: 0L
                 when {
@@ -98,7 +100,61 @@ object Synchro {
             }
             val g = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
             stan.value = wynik.fold({ "$g $it ✓" }, { "$g błąd: ${it.message}" })
-        }.start()
+        }
+    }
+
+    // ---------- Tryb auto: wspólna stacja i wykorzystany czas (pole „auto”, własny czas „kiedy”) ----------
+
+    /** Przyjęcie „auto” ze schowka, gdy nowsze niż lokalne. Zwraca true, gdy przyjęto. */
+    private fun przyjmijAuto(o: JSONObject): Boolean {
+        val a = o.optJSONObject("auto") ?: return false
+        val kiedy = a.optLong("kiedy", 0L)
+        if (kiedy <= p().getLong("auto_kiedy", 0L)) return false
+        val s = Magazyn(app).stacje.firstOrNull { it.adres == a.optString("adres") } ?: return false
+        StanLosowania.prefs(app).edit().putString("auto_id", s.id).putInt("auto_sek", a.optInt("sek", 0)).commit()
+        p().edit().putLong("auto_kiedy", kiedy).commit()
+        return true
+    }
+
+    /** Wysłanie bieżącego stanu auto (kiedy = teraz). Najpierw GET i przyjęcie nowszych danych. */
+    fun wyslijAuto() {
+        if (!uruchomione || kod(app).isBlank() || !StanLosowania.trybAuto(app)) return
+        val kod = kod(app)
+        watek.execute {
+            runCatching {
+                val zdalne = pobierz(kod)
+                val lokalnaZmiana = p().getLong("zmiana", 0L)
+                val zdalnaZmiana = zdalne?.optLong("zmiana", 0L) ?: 0L
+                if (zdalne != null && zdalnaZmiana > lokalnaZmiana) {
+                    val gotowe = java.util.concurrent.CountDownLatch(1)
+                    glowny.post {
+                        val scalono = zastosuj(zdalne)
+                        p().edit().putLong("zmiana", if (scalono) System.currentTimeMillis() else zdalnaZmiana).commit()
+                        poPrzyjeciu?.invoke()
+                        gotowe.countDown()
+                    }
+                    gotowe.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                }
+                // własny stan auto jest najnowszy (kiedy = teraz), więc zdalnego nie przyjmujemy
+                p().edit().putLong("auto_kiedy", System.currentTimeMillis()).commit()
+                val o = zbierz()
+                zdalne?.keys()?.forEach { k -> if (!o.has(k)) o.put(k, zdalne.get(k)) }
+                wyslij(kod, o)
+            }
+        }
+    }
+
+    /** „Graj losowo” w trybie auto: najpierw pobierz stan auto ze schowka (maks. ~3 s), potem [dalej] na wątku głównym. */
+    fun pobierzAuto(dalej: () -> Unit) {
+        if (!uruchomione || kod(app).isBlank() || !StanLosowania.trybAuto(app)) { dalej(); return }
+        val kod = kod(app)
+        var zrobione = false
+        val raz = Runnable { if (!zrobione) { zrobione = true; dalej() } }
+        glowny.postDelayed(raz, 3000)
+        watek.execute {
+            runCatching { pobierz(kod)?.let { przyjmijAuto(it) } }
+            glowny.post { glowny.removeCallbacks(raz); raz.run() }
+        }
     }
 
     private fun pobierz(kod: String): JSONObject? {
@@ -146,6 +202,11 @@ object Synchro {
             .put("glos", JSONObject().put("wl", UstGlosnosci.wlaczone(app)).put("cel", UstGlosnosci.cel(app).toDouble())
                 .put("maks", UstGlosnosci.maks(app).toDouble()).put("kor", kor))
         o.put("spotify", SpotifyUst.wybrana(app)?.let { JSONObject().put("uri", it.uri).put("nazwa", it.nazwa) } ?: JSONObject.NULL)
+        val autoId = los.getString("auto_id", null)
+        val autoAdres = autoId?.let { m.stacja(it)?.adres }
+        val autoKiedy = p().getLong("auto_kiedy", 0L)
+        if (autoAdres != null && autoKiedy > 0)
+            o.put("auto", JSONObject().put("adres", autoAdres).put("sek", los.getInt("auto_sek", 0)).put("kiedy", autoKiedy))
         val dzienId = los.getString("dzien_id", null)
         val dzienAdres = dzienId?.let { m.stacja(it)?.adres }
         if (dzienAdres != null) o.put("dzien", JSONObject().put("data", los.getString("dzien_data", "")).put("adres", dzienAdres))
