@@ -77,7 +77,12 @@ object Synchro {
                 val lokalnaZmiana = p().getLong("zmiana", 0L)
                 val zdalnaZmiana = zdalne?.optLong("zmiana", 0L) ?: 0L
                 when {
-                    zdalne == null || zdalnaZmiana < lokalnaZmiana || (zdalnaZmiana == 0L) -> { wyslij(kod, zbierz()); "wysłano" }
+                    zdalne == null || zdalnaZmiana < lokalnaZmiana || (zdalnaZmiana == 0L) -> {
+                        val o = zbierz()
+                        // pola, których telefon nie zna, zostają w schowku
+                        zdalne?.keys()?.forEach { k -> if (!o.has(k)) o.put(k, zdalne.get(k)) }
+                        wyslij(kod, o); "wysłano"
+                    }
                     zdalnaZmiana > lokalnaZmiana -> {
                         glowny.post {
                             val scalono = zastosuj(zdalne)
