@@ -41,6 +41,7 @@ object Synchro {
         "mowa" to null,
         "glosnosc" to null,
         "ustawienia" to setOf("klucz_di"),
+        "spotify" to setOf("uri", "nazwa"),
         "losowanie_stan" to setOf("auto", "auto_min", "wzgledny", "dzien_data", "dzien_id"),
     )
     private val sluchacz = SharedPreferences.OnSharedPreferenceChangeListener { sp, klucz ->
@@ -139,6 +140,7 @@ object Synchro {
                 .put("margKon", UstMowy.margKon(app).toDouble()).put("przejscie", UstMowy.czasPrzejscia(app).toDouble()))
             .put("glos", JSONObject().put("wl", UstGlosnosci.wlaczone(app)).put("cel", UstGlosnosci.cel(app).toDouble())
                 .put("maks", UstGlosnosci.maks(app).toDouble()).put("kor", kor))
+        o.put("spotify", SpotifyUst.wybrana(app)?.let { JSONObject().put("uri", it.uri).put("nazwa", it.nazwa) } ?: JSONObject.NULL)
         val dzienId = los.getString("dzien_id", null)
         val dzienAdres = dzienId?.let { m.stacja(it)?.adres }
         if (dzienAdres != null) o.put("dzien", JSONObject().put("data", los.getString("dzien_data", "")).put("adres", dzienAdres))
@@ -179,6 +181,12 @@ object Synchro {
                         .forEach { s -> UstGlosnosci.ustawKorekte(app, s.id, k.optDouble(s.adres, 0.0).toFloat()) }
                     UstGlosnosci.ustawKorekte(app, UstGlosnosci.ID_RMF, k.optDouble("rmf24", 0.0).toFloat())
                 }
+            }
+            o.optJSONObject("spotify")?.let { sp ->
+                val uri = sp.optString("uri")
+                val obecna = SpotifyUst.wybrana(app)
+                if (uri.isNotBlank() && uri != obecna?.uri)
+                    SpotifyUst.wybierz(app, Playlista(uri, sp.optString("nazwa"), 0))   // liczbę utworów telefon odświeży
             }
             o.optJSONObject("dzien")?.let { d ->
                 val s = m2.stacje.firstOrNull { it.adres == d.optString("adres") }
