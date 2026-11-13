@@ -111,8 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.0";
-const MP = "/npm/@mediapipe/tasks-audio@0.10.14";
+const WERSJA = "web 1.1";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -300,6 +299,7 @@ const diFm = (a) => (a || "").includes("di.fm");
 
 async function graj(s, zLosowania = false) {
   if (s.adres.includes(ZN_DI) && !(U.kluczDi || "").trim()) { status("Najpierw wpisz i zapisz klucz DI.FM (na dole zakładki Stacje)."); return; }
+  status("Łączę...");
   await przygotujDzwiek(); await ctx.resume();
   if (!A) { A = new Gniazdo(); B = new Gniazdo(); [A, B].forEach(podepnij); }
   if (!zLosowania) { U.los.aktywne = false; zapisz(false); }
@@ -385,20 +385,19 @@ function losuj() {
 }
 
 // ---------- Nasłuch RMF24 + YAMNet + przełączanie (jak Nasluch.kt i RadioService.kt) ----------
-let klas = null, klasLaduje = null;
-async function zaladujYamnet() {
-  if (klas) return klas;
-  if (!klasLaduje) klasLaduje = (async () => {
-    try {
-      const { FilesetResolver, AudioClassifier } = await import(MP + "/audio_bundle.mjs");
-      const fs = await FilesetResolver.forAudioTasks(MP + "/wasm");
-      klas = await AudioClassifier.createFromOptions(fs, { baseOptions: { modelAssetPath: "/f/yamnet.tflite" }, maxResults: -1, scoreThreshold: 0 });
-      dodajLog("YAMNet załadowany");
-    } catch (e) { dodajLog("YAMNet niedostępny: " + e.message); klasLaduje = null; }
-    return klas;
-  })();
-  return klasLaduje;
+let watekY = null, nrZad = 0; const zadania = new Map();
+function zaladujYamnet() {
+  if (watekY) return;
+  watekY = new Worker("/f/yamnet-watek.js");
+  watekY.onmessage = (e) => {
+    const d = e.data;
+    if (d.gotowy) dodajLog("YAMNet załadowany");
+    else if (d.id !== undefined) { const z = zadania.get(d.id); zadania.delete(d.id); z && z(d); }
+    else if (d.blad) dodajLog("YAMNet niedostępny: " + d.blad);
+  };
+  watekY.onerror = (e) => dodajLog("YAMNet: błąd wątku " + (e.message || ""));
 }
+function klasyfikuj(x) { zaladujYamnet(); const id = nrZad++; return new Promise(ok => { zadania.set(id, ok); watekY.postMessage({ id, x }, [x.buffer]); }); }
 
 const R = { el: null, str: null, node: null, wyr: null, gain: null, dziala: false, zapisane: 0, poz: 0, sr: 48000,
   blok: null, wBloku: 0, ramkaBloku: 0, startBloku: 0, nrBloku: 0, seriaMowa: null, seriaN: 0, seriaStart: 0, werdykt: "?",
@@ -455,16 +454,13 @@ function przyjmij(pcm, ramka) {
   }
 }
 async function analizuj(x, nr, ramka) {
-  const m = await zaladujYamnet(); if (!m || !R.dziala) return;
+  if (!R.dziala) return;
+  const w = await klasyfikuj(x);
+  if (!w.okna) return;
   const n = 15600; let sMowa = 0, sMuz = 0, ramki = 0, pierw = null, ost = null;
-  for (let st = 0; st + n <= x.length; st += n / 2) {
-    const wyn = m.classify(x.subarray(st, st + n), 16000);
-    const kat = wyn?.[0]?.classifications?.[0]?.categories || [];
-    let mowa = 0, muz = 0;
-    for (const c of kat) { if (c.index === IDX_MOWA) mowa = c.score; else if (c.index === IDX_MUZYKA) muz = c.score; }
+  for (const [st, mowa, muz] of w.okna) {
     sMowa += mowa; sMuz += muz; ramki++;
     if (mowa >= PROG) { ost = (st + n) / 16000; if (pierw === null) pierw = st / 16000; }
-    if (ramki % 8 === 0) await czekaj(0);
   }
   if (!ramki || !R.dziala) return;
   const sm = sMowa / ramki, smu = sMuz / ramki, jestMowa = sm >= PROG;
