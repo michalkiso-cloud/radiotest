@@ -1,0 +1,12 @@
+name: Test okładek
+on:
+  push:
+    branches: ["claude/**"]
+    paths: ["tools/okladki/**"]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/okladki/test.py
