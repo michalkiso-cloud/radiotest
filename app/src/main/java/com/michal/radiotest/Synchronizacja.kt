@@ -79,8 +79,10 @@ object Synchro {
                     zdalne == null || zdalnaZmiana < lokalnaZmiana || (zdalnaZmiana == 0L) -> { wyslij(kod, zbierz()); "wysłano" }
                     zdalnaZmiana > lokalnaZmiana -> {
                         glowny.post {
-                            zastosuj(zdalne)
-                            p().edit().putLong("zmiana", zdalnaZmiana).apply()
+                            val scalono = zastosuj(zdalne)
+                            // zachowane lokalne stacje (np. Spotify): odeślij scaloną listę
+                            p().edit().putLong("zmiana", if (scalono) System.currentTimeMillis() else zdalnaZmiana).apply()
+                            if (scalono) glowny.postDelayed({ teraz() }, 1500)
                             poPrzyjeciu?.invoke()
                         }
                         "pobrano ze strony"
@@ -144,15 +146,16 @@ object Synchro {
     }
 
     /** Przyjęcie ustawień ze strony (wątek główny). */
-    private fun zastosuj(o: JSONObject) {
+    private fun zastosuj(o: JSONObject): Boolean {
         przyjmuje = true
+        var scalono = false
         try {
             val m = Magazyn(app)
             o.optJSONArray("stacje")?.let { a ->
                 val lista = (0 until a.length()).map { a.getJSONObject(it) }
                     .map { Triple(it.optString("nazwa"), it.optString("adres"), it.optDouble("waga", 0.0)) }
                     .filter { it.second.isNotBlank() }
-                if (lista.isNotEmpty()) m.zastap(lista)
+                if (lista.isNotEmpty()) scalono = m.zastap(lista)
             }
             if (o.has("kluczDi")) app.getSharedPreferences("ustawienia", Context.MODE_PRIVATE).edit()
                 .putString("klucz_di", o.optString("kluczDi")).apply()
@@ -171,7 +174,9 @@ object Synchro {
                 if (g.has("cel")) UstGlosnosci.ustawCel(app, g.optDouble("cel").toFloat())
                 if (g.has("maks")) UstGlosnosci.ustawMaks(app, g.optDouble("maks").toFloat())
                 g.optJSONObject("kor")?.let { k ->
-                    m2.stacje.forEach { s -> UstGlosnosci.ustawKorekte(app, s.id, k.optDouble(s.adres, 0.0).toFloat()) }
+                    val zdalneAdresy = o.optJSONArray("stacje")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).optString("adres") }.toSet() }
+                    m2.stacje.filter { zdalneAdresy == null || it.adres in zdalneAdresy || k.has(it.adres) }
+                        .forEach { s -> UstGlosnosci.ustawKorekte(app, s.id, k.optDouble(s.adres, 0.0).toFloat()) }
                     UstGlosnosci.ustawKorekte(app, UstGlosnosci.ID_RMF, k.optDouble("rmf24", 0.0).toFloat())
                 }
             }
@@ -184,5 +189,6 @@ object Synchro {
             // słuchacz zmian odpala się asynchronicznie po apply(): odblokuj chwilę później
             glowny.postDelayed({ przyjmuje = false }, 500)
         }
+        return scalono
     }
 }

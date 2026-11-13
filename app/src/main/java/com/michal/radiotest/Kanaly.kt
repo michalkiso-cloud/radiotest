@@ -112,13 +112,20 @@ class Magazyn(ctx: Context) {
     }
 
     /** Lista ze strony (synchronizacja): stacje rozpoznawane po adresie, waga 0 = poza losowaniem. */
-    fun zastap(lista: List<Triple<String, String, Double>>) {
+    /** Przyjęcie listy ze strony. Lokalne stacje, których adresu nie ma na liście (np. Spotify), zostają.
+     *  Zwraca true, gdy coś zostało zachowane (trzeba odesłać scaloną listę). */
+    fun zastap(lista: List<Triple<String, String, Double>>): Boolean {
         val stare = stacje.associateBy { it.adres }
+        val adresy = lista.map { it.second }.toSet()
+        val wagi = losowanie.associate { it.id to it.waga }
+        val zostaja = stacje.filter { it.adres !in adresy }
         val nowe = lista.map { (n, a, _) -> Stacja(stare[a]?.id ?: noweId(), n, a) }
-        stacje.clear(); stacje.addAll(nowe)
+        stacje.clear(); stacje.addAll(nowe); stacje.addAll(zostaja)
         losowanie.clear()
         lista.forEachIndexed { i, (_, _, w) -> if (w > 0) losowanie.add(Los(nowe[i].id, w)) }
+        zostaja.forEach { s -> wagi[s.id]?.let { if (it > 0) losowanie.add(Los(s.id, it)) } }
         zapisz()
+        return zostaja.isNotEmpty()
     }
 
     private fun zapisz() {
