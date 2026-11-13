@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.3";
+const WERSJA = "web 1.3.1";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -949,7 +949,7 @@ $("#bLosuj").onclick = () => losuj();
 $("#bPauza").onclick = () => pauza();
 $("#bStop").onclick = () => stop();
 $("#tresc").addEventListener("click", (e) => {
-  const t = e.target.closest("[data-graj],[data-stop],[data-edytuj],[data-usun],[data-szansa],#dodajSt,#dodajLos,#zapiszKlucz,#wrocLog,[data-kr]");
+  const t = e.target.closest("[data-graj],[data-stop],[data-edytuj],[data-usun],[data-szansa],#dodajSt,#dodajLos,#zapiszKlucz,#wrocLog,[data-kr],#spPolacz,#spRozlacz,#spOdswiez");
   if (!t) return;
   e.stopPropagation();
   if (t.dataset.stop !== undefined) stop();
