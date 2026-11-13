@@ -13,7 +13,8 @@ data class Stacja(val id: String, val nazwa: String, val adres: String)
 data class Los(val id: String, val waga: Double)
 
 const val ZNACZNIK_DI = "{KLUCZ_DI}"
-const val RMF24 = "https://rs201-krk.rmfstream.pl/RMF24"
+// MP3 128 kb/s (wcześniej AAC+ 64 kb/s: https://rs201-krk.rmfstream.pl/RMF24)
+const val RMF24 = "https://rs201-krk.rmfstream.pl/rmf_24"
 /** Adres specjalnej stacji Spotify: gra playlistę wybraną w Ustawieniach (shuffle). */
 const val SPOTIFY_ADRES = "spotify:wybrana"
 
