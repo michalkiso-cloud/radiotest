@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.2";
+const WERSJA = "web 1.3";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -157,6 +157,7 @@ function doSchowka() {
     stacje: U.stacje.map(s => ({ nazwa: s.nazwa, adres: s.adres, waga: (U.losowanie.find(l => l.id === s.id) || {}).waga || 0 })),
     kluczDi: U.kluczDi || "", trybAuto: U.trybAuto, autoMin: U.autoMin, wzgledny: U.wzgledny,
     mowa: { ...U.mowa }, glos: { wl: U.glos.wl, cel: U.glos.cel, maks: U.glos.maks, kor },
+    spotify: U.spotify || null,
     dzien: U.los.dzienId && adr(U.los.dzienId) ? { data: U.los.dzienData, adres: adr(U.los.dzienId) } : null });
 }
 function zeSchowka(z) {
@@ -175,6 +176,7 @@ function zeSchowka(z) {
   if (z.mowa) U.mowa = { ...U.mowa, ...z.mowa };
   if (z.glos) U.glos = { ...U.glos, wl: z.glos.wl ?? U.glos.wl, cel: z.glos.cel ?? U.glos.cel, maks: z.glos.maks ?? U.glos.maks, kor };
   if (z.dzien && id(z.dzien.adres)) { U.los.dzienData = z.dzien.data; U.los.dzienId = id(z.dzien.adres); }
+  if (z.spotify && z.spotify.uri) U.spotify = { uri: z.spotify.uri, nazwa: z.spotify.nazwa || "" };
   U.zmiana = z.zmiana;
 }
 let schowek = true;
@@ -341,7 +343,8 @@ const czekaj = (ms) => new Promise(ok => setTimeout(ok, ms));
 const diFm = (a) => (a || "").includes("di.fm");
 
 async function graj(s, zLosowania = false) {
-  if (s.adres.startsWith("spotify:")) { status("Spotify w przeglądarce jeszcze nie działa."); return; }
+  const naSp = s.adres.startsWith("spotify:");
+  if (naSp && (!SP.refresh || !U.spotify)) { status("Najpierw połącz Spotify i wybierz playlistę (na dole zakładki Stacje)."); return; }
   if (s.adres.includes(ZN_DI) && !(U.kluczDi || "").trim()) { status("Najpierw wpisz i zapisz klucz DI.FM (na dole zakładki Stacje)."); return; }
   status("Łączę...");
   await przygotujDzwiek(); await ctx.resume();
@@ -353,6 +356,17 @@ async function graj(s, zLosowania = false) {
   const poprzednia = obecna, stare = gl;
   obecna = s; graTeraz = true; icyTytul = ""; okladka = null; proby = 0; clearTimeout(ponowTimer);
   status("Łączę..."); rysujPanel(); rysuj();
+  if (naSp) {
+    if (stare && stare.gra) { rampa(stare.gain, stare.gain.gain.value, 0, czasP()); await czekaj(czasP() * 1000); if (nr !== nrGraj) return; }
+    if (stare) stare.stop();
+    gl = null; trybSp = true;
+    try { await spGraj(); } catch (e) { if (nr === nrGraj) { status("Spotify: " + e.message); dodajLog("Spotify: " + e.message); } return; }
+    if (nr !== nrGraj) return;
+    status("Gra.");
+    if (U.mowa.wl) nasluchStart(); else nasluchStop();
+    return;
+  }
+  if (trybSp) { trybSp = false; spPauza(); }
   const nowe = stare === A ? B : A;
   const przenikaj = stare && stare.gra && poprzednia && !(diFm(poprzednia.adres) && diFm(s.adres));
   if (stare && stare.gra && !przenikaj) {   // DI.FM → DI.FM: ściszenie, potem przełączenie
@@ -388,22 +402,126 @@ function pauza() {
   if (graTeraz) {
     graTeraz = false; nrGraj++; clearTimeout(ponowTimer);
     przerwijRmf(); nasluchStop();
+    if (trybSp) spPauza();
     if (gl) { const g = gl; rampa(g.gain, g.gain.gain.value, 0, 0.3); setTimeout(() => { if (!graTeraz) { A.stop(); B.stop(); } }, 350); }
     status("Pauza."); dodajLog("Pauza");
-  } else graj(obecna, U.los.aktywne);
+  } else if (trybSp) { graTeraz = true; spWznow(); status("Gra."); if (U.mowa.wl) nasluchStart(); }
+  else graj(obecna, U.los.aktywne);
   rysujPanel();
 }
 function stop() {
   nrGraj++; graTeraz = false; obecna = null; icyTytul = ""; okladka = null; clearTimeout(ponowTimer);
   przerwijRmf(); nasluchStop();
+  if (trybSp) { trybSp = false; spPauza(); }
   if (A) { A.stop(); B.stop(); }
   U.los.aktywne = false; zapisz(false);
   status("Zatrzymane."); rysujPanel(); rysuj();
 }
 
+
+// ---------- Spotify (Web Playback SDK, wymaga Premium) ----------
+const SP_ID = "b9612d932c4540dab2a687aa1a7849b1", SP_ADRES = "spotify:wybrana";
+const SP_ZAKRESY = "streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state playlist-read-private playlist-read-collaborative";
+const spRedirect = () => location.origin + "/";
+let SP = {}; try { SP = JSON.parse(localStorage.getItem("spotify") || "{}"); } catch (e) {}
+const spZapisz = () => { try { localStorage.setItem("spotify", JSON.stringify(SP)); } catch (e) {} };
+let spPlayer = null, spDev = null, trybSp = false, spLista = null;
+const b64url = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+async function spZgoda() {
+  const v = b64url(crypto.getRandomValues(new Uint8Array(48)));
+  try { sessionStorage.setItem("spV", v); } catch (e) {}
+  const ch = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v)));
+  location.href = "https://accounts.spotify.com/authorize?" + new URLSearchParams({ client_id: SP_ID, response_type: "code",
+    redirect_uri: spRedirect(), scope: SP_ZAKRESY, code_challenge_method: "S256", code_challenge: ch });
+}
+async function spTokenZ(par) {
+  const r = await fetch("https://accounts.spotify.com/api/token", { method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: SP_ID, ...par }) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error_description || j.error || r.status);
+  SP.access = j.access_token; SP.wygasa = Date.now() + (j.expires_in - 60) * 1000;
+  if (j.refresh_token) SP.refresh = j.refresh_token;
+  spZapisz();
+}
+async function spPowrotZeZgody() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has("code") && !q.has("error")) return;
+  history.replaceState(null, "", "/");
+  if (q.get("error")) { status("Spotify: zgoda przerwana."); return; }
+  let v = ""; try { v = sessionStorage.getItem("spV") || ""; } catch (e) {}
+  try { await spTokenZ({ grant_type: "authorization_code", code: q.get("code"), redirect_uri: spRedirect(), code_verifier: v }); status("Połączono ze Spotify."); dodajLog("Spotify: połączono"); }
+  catch (e) { status("Spotify: błąd zgody (" + e.message + ")"); }
+}
+async function spToken() {
+  if (SP.access && SP.wygasa > Date.now()) return SP.access;
+  if (!SP.refresh) throw new Error("brak połączenia ze Spotify");
+  await spTokenZ({ grant_type: "refresh_token", refresh_token: SP.refresh });
+  return SP.access;
+}
+async function spApi(sciezka, opcje = {}) {
+  const t = await spToken();
+  const r = await fetch("https://api.spotify.com/v1" + sciezka, { ...opcje, headers: { Authorization: "Bearer " + t, ...(opcje.body ? { "content-type": "application/json" } : {}) } });
+  if (r.status === 204) return {};
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((j.error && j.error.message) || "kod " + r.status);
+  return j;
+}
+function spSkrypt() {
+  if (window.Spotify) return Promise.resolve();
+  return new Promise((ok, zle) => {
+    window.onSpotifyWebPlaybackSDKReady = ok;
+    const sc = document.createElement("script"); sc.src = "https://sdk.scdn.co/spotify-player.js";
+    sc.onerror = () => zle(new Error("nie można pobrać odtwarzacza Spotify (sieć?)")); document.head.appendChild(sc);
+  });
+}
+let spStart = null;
+function spOdtwarzacz() {
+  if (spStart) return spStart;
+  spStart = (async () => {
+    await spSkrypt();
+    spPlayer = new Spotify.Player({ name: "Radio (przeglądarka)", volume: 1, getOAuthToken: (cb) => spToken().then(cb).catch(e => dodajLog("Spotify: " + e.message)) });
+    const gotowy = new Promise((ok, zle) => {
+      spPlayer.addListener("ready", ({ device_id }) => { spDev = device_id; ok(); });
+      for (const z of ["initialization_error", "authentication_error", "account_error"]) spPlayer.addListener(z, ({ message }) => { dodajLog(`Spotify (${z}): ${message}`); zle(new Error(z === "account_error" ? "potrzebne konto Premium" : message)); });
+    });
+    spPlayer.addListener("playback_error", ({ message }) => dodajLog("Spotify: błąd odtwarzania " + message));
+    spPlayer.addListener("player_state_changed", (st) => {
+      if (!st || !trybSp) return;
+      const tr = st.track_window && st.track_window.current_track; if (!tr) return;
+      const t = tr.artists.map(a => a.name).join(", ") + " - " + tr.name;
+      if (t !== icyTytul) { icyTytul = t; okladka = (tr.album.images.find(i => i.width >= 250) || tr.album.images[0] || {}).url || null; dodajLog("♪ " + t); rysujPanel(); }
+    });
+    await spPlayer.connect();
+    await gotowy;
+    dodajLog("Spotify: odtwarzacz gotowy");
+  })();
+  spStart.catch(() => { spStart = null; });
+  return spStart;
+}
+document.addEventListener("click", () => { if (spPlayer) spPlayer.activateElement(); }, true);
+async function spGraj() {
+  const pl = U.spotify; if (!pl) throw new Error("nie wybrano playlisty");
+  await spOdtwarzacz();
+  const id = pl.uri.split(":").pop();
+  let n = 0; try { n = (await spApi(`/playlists/${id}?fields=tracks.total`)).tracks.total; } catch (e) {}
+  await spApi(`/me/player/shuffle?state=true&device_id=${spDev}`, { method: "PUT" }).catch(() => {});
+  await spApi(`/me/player/play?device_id=${spDev}`, { method: "PUT", body: JSON.stringify({ context_uri: pl.uri, ...(n > 1 ? { offset: { position: Math.floor(Math.random() * n) } } : {}) }) });
+}
+const spPauza = () => { if (spPlayer) spPlayer.pause().catch(() => {}); };
+const spWznow = () => { if (spPlayer) spPlayer.resume().catch(() => {}); };
+async function spPlaylisty() {
+  const w = []; let u = "/me/playlists?limit=50";
+  while (u && w.length < 500) {
+    const j = await spApi(u);
+    for (const o of j.items || []) if (o) w.push({ uri: o.uri, nazwa: o.name });
+    u = j.next ? j.next.replace("https://api.spotify.com/v1", "") : null;
+  }
+  return w;
+}
+
 // ---------- Losowanie (jak w aplikacji) ----------
 function wylosuj(bez) {
-  const ok = (id) => stacja(id) && !stacja(id).adres.startsWith("spotify:");
+  const ok = (id) => stacja(id) && (!stacja(id).adres.startsWith("spotify:") || (SP.refresh && U.spotify));
   let pula = U.losowanie.filter(l => l.id !== bez && ok(l.id));
   if (!pula.length) pula = U.losowanie.filter(l => ok(l.id));
   const suma = pula.reduce((a, l) => a + l.waga, 0); if (suma <= 0) return null;
@@ -540,6 +658,7 @@ function wejdzNaRmf(ks) {
   dodajLog(`→ RMF24 (opóźnienie ${Math.max(0, (R.zapisane - start) / R.sr).toFixed(0)} s)`);
   rampa(R.gain, 0, 1, czasP());
   if (gl) rampa(gl.gain, gl.gain.gain.value, 0, czasP());
+  if (trybSp) spPauza();
   rysujPanel();
 }
 function ustawPowrot(ks) {
@@ -559,6 +678,7 @@ function wrocZRmf() {
   dodajLog("← powrót do radia głównego");
   rampa(R.gain, R.gain.gain.value, 0, czasP());
   if (gl) rampa(gl.gain, gl.gain.gain.value, 1, czasP());
+  if (trybSp) spWznow();
   setTimeout(() => { if (!R.tryb) R.node.port.postMessage({ stop: true }); }, czasP() * 1000 + 100);
   rysujPanel();
 }
@@ -690,14 +810,21 @@ function rysujStacje() {
   for (const s of U.stacje) {
     const gra = obecna && s.id === obecna.id;
     h += `<div class="karta${gra ? " gra" : ""}" data-graj="${s.id}"><div class="op"><div class="n">${esc(s.nazwa)}</div>
-      <div class="m">${wLosowaniu(s.id) ? "w losowaniu" : "poza losowaniem"}</div></div>
+      <div class="m">${s.adres === SP_ADRES ? esc((U.spotify ? U.spotify.nazwa : "playlista niewybrana") + " (shuffle), ") : ""}${wLosowaniu(s.id) ? "w losowaniu" : "poza losowaniem"}</div></div>
       ${gra ? `<button class="ik" data-stop title="Stop">${IK.stop}</button>` : `<button class="ik" data-graj="${s.id}" title="Graj">${IK.graj}</button>`}
       <button class="ik" data-edytuj="${s.id}" title="Edytuj">${IK.edytuj}</button><button class="ik" data-usun="${s.id}" title="Usuń">${IK.usun}</button></div>`;
   }
   h += `<hr style="margin-top:16px"><h3>Ustawienia</h3>
     <label class="pole">Klucz DI.FM premium</label><input type="password" id="kluczDi" value="${esc(U.kluczDi || "")}" autocomplete="off">
     <p><button class="obr" id="zapiszKlucz">Zapisz klucz</button></p>
-    <p class="male">Spotify w przeglądarce: w przygotowaniu.</p>
+    <div style="font-weight:500;margin:10px 0 6px">Spotify</div>
+    ${!SP.refresh ? `<button class="obr" id="spPolacz">Połącz ze Spotify</button>` : `
+      <select id="spWybor" style="width:100%;padding:11px;border-radius:20px;border:1px solid var(--linia);background:var(--pole);color:var(--fg);font:inherit">
+        ${(spLista || (U.spotify ? [U.spotify] : [])).map(p => `<option value="${esc(p.uri)}"${U.spotify && U.spotify.uri === p.uri ? " selected" : ""}>${esc(p.nazwa)}</option>`).join("")}
+        ${U.spotify ? "" : `<option value="" selected>Playlista: wybierz</option>`}
+      </select>
+      <p style="display:flex;gap:6px"><button class="tekst" id="spOdswiez">${spLista ? "Odśwież listę playlist" : "Pokaż wszystkie playlisty"}</button><button class="tekst" id="spRozlacz">Rozłącz</button></p>`}
+    <p class="male">Spotify gra w tej karcie (konto Premium). Głośność wyrównuje samo Spotify.</p>
     <p class="male">Wersja ${WERSJA}</p><div style="height:70px"></div></div>
     <button class="fab" id="dodajSt" title="Dodaj stację">+</button>`;
   $("#tresc").innerHTML = h;
@@ -832,6 +959,9 @@ $("#tresc").addEventListener("click", (e) => {
   else if (t.dataset.szansa) oknoSzansy(stacja(t.dataset.szansa));
   else if (t.id === "dodajSt") oknoStacji(null);
   else if (t.id === "dodajLos") oknoWyboru();
+  else if (t.id === "spPolacz") spZgoda();
+  else if (t.id === "spRozlacz") { SP = {}; spZapisz(); if (spPlayer) spPlayer.disconnect(); spPlayer = null; spStart = null; rysuj(); }
+  else if (t.id === "spOdswiez") { status("Pobieram playlisty..."); spPlaylisty().then(l => { spLista = l; status("Playlist: " + l.length); rysuj(); }).catch(e => status("Spotify: " + e.message)); }
   else if (t.id === "zapiszKlucz") { U.kluczDi = $("#kluczDi").value.trim(); zapisz(); status("Klucz DI.FM zapisany."); }
   else if (t.id === "wrocLog") { pokazLog = false; rysuj(); }
   else if (t.dataset.kr) {
@@ -843,7 +973,8 @@ $("#tresc").addEventListener("click", (e) => {
 });
 $("#tresc").addEventListener("change", (e) => {
   const t = e.target;
-  if (t.id === "autostart") U.autostart = t.checked;
+  if (t.id === "spWybor") { const p = (spLista || []).find(x => x.uri === t.value); if (p) U.spotify = p; }
+  else if (t.id === "autostart") U.autostart = t.checked;
   else if (t.name === "tryb") { U.trybAuto = t.value === "1"; rysuj(); }
   else if (t.name === "wzgl") U.wzgledny = t.value === "1";
   else if (t.id === "autoMin") { const v = parseInt(t.value, 10); if (v > 0) U.autoMin = Math.min(1440, v); }
@@ -875,7 +1006,9 @@ if ("mediaSession" in navigator) {
 window.radio = { R, naBlok, U };
 
 // ---------- Start ----------
+if (!U.stacje.some(x => x.adres === SP_ADRES) && !U.spDodany) { U.stacje.push({ id: noweId(), nazwa: "Spotify", adres: SP_ADRES }); U.spDodany = true; zapisz(false); }
 ustawMotyw(); rysuj(); pobierzUst();
+spPowrotZeZgody().then(() => { if (SP.refresh) { spOdtwarzacz().catch(e => dodajLog("Spotify: " + e.message)); rysuj(); } });
 przygotujDzwiek().catch(e => status("Błąd dźwięku: " + e.message));
 if (U.autostart) {
   const z = $("#zaslona"); z.style.display = "flex";
