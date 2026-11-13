@@ -397,7 +397,12 @@ class RadioService : MediaLibraryService() {
                     probyFokus = 0
                     handler.postDelayed(probaWznowienia, 3000)
                 }
-            } else if (player.mediaItemCount > 0) { nasluchStart(); wezFokus() }
+            } else if (player.mediaItemCount > 0) {
+                nasluchStart(); wezFokus()
+                // gra „nic” (np. usługa uruchomiona od nowa przez Android Auto): po 6 s bez stacji losujemy
+                handler.removeCallbacks(bezStacji)
+                handler.postDelayed(bezStacji, 6000)
+            }
             if (!trybSpotify) return
             if (playWhenReady) { spotifyGralo = false; wznowSpotify() }
             else naSpotify { it.playerApi.pause(); LogMowy.dodaj("Spotify: pauza") }
@@ -442,6 +447,7 @@ class RadioService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        LogMowy.dodaj("Usługa radia: start")
         Synchro.start(this)
         player = nowyPlayer(true)
         player.addListener(sluchacz)
@@ -557,6 +563,7 @@ class RadioService : MediaLibraryService() {
         override fun onPlaybackResumption(
             mediaSession: MediaSession, controller: MediaSession.ControllerInfo
         ): ListenableFuture<MediaItemsWithStartPosition> {
+            LogMowy.dodaj("Wznowienie z zewnątrz (${controller.packageName})")
             handler.post { uruchomZBiblioteki(ID_LOSUJ) }
             return Futures.immediateFuture(MediaItemsWithStartPosition(listOf(zastepczy(ID_LOSUJ)), 0, C.TIME_UNSET))
         }
@@ -853,30 +860,33 @@ class RadioService : MediaLibraryService() {
             .build()
     }
 
-    /** Wznowienie Spotify ze sprawdzeniem: po powrocie do auta Spotify bywa uruchomione od nowa
-     *  i „wznów” nic nie robi. Gdy po 4 s nadal stoi: drugie „wznów”, po kolejnych 4 s playlista od nowa. */
+    private val bezStacji = Runnable {
+        if (obecna == null && !trybSpotify && player.playWhenReady) {
+            LogMowy.dodaj("Gra bez stacji (wznowienie z zewnątrz), losuję")
+            losujZeSchowkiem()
+        }
+    }
+
+    /** Wznowienie Spotify ze sprawdzeniem: po powrocie do auta Spotify bywa uruchomione od nowa,
+     *  a stare połączenie App Remote martwe (polecenia giną bez odpowiedzi).
+     *  Gdy po 5 s Spotify nie zgłosi grania: nowe połączenie i „wznów”; po kolejnych 7 s playlista od nowa. */
     private fun wznowSpotify(proba: Int = 0) {
         val pl = SpotifyUst.wybrana(this) ?: return
-        if (proba == 0) LogMowy.dodaj("Spotify: wznów")
+        LogMowy.dodaj(if (proba == 0) "Spotify: wznów" else "Spotify nie ruszyło, łączę od nowa i wznawiam")
+        spotifyGralo = false
+        if (proba > 0) { spotify?.let { runCatching { SpotifyAppRemote.disconnect(it) } }; spotify = null }
         naSpotify { r ->
             r.playerApi.resume().setErrorCallback { if (trybSpotify) startSpotify(pl.uri, pl.utwory) }
         }
         handler.postDelayed({
-            if (!trybSpotify || trybRmf || !player.playWhenReady) return@postDelayed
-            naSpotify { r ->
-                r.playerApi.playerState.setResultCallback { st ->
-                    if (!trybSpotify || trybRmf || !player.playWhenReady) return@setResultCallback
-                    if (!st.isPaused && st.track != null) return@setResultCallback
-                    if (proba == 0 && st.track != null) {
-                        LogMowy.dodaj("Spotify nie ruszyło, ponawiam wznowienie")
-                        wznowSpotify(1)
-                    } else {
-                        LogMowy.dodaj("Spotify nie wznowiło się, uruchamiam playlistę od nowa")
-                        startSpotify(pl.uri, pl.utwory)
-                    }
-                }.setErrorCallback { if (trybSpotify) startSpotify(pl.uri, pl.utwory) }
+            if (!trybSpotify || trybRmf || !player.playWhenReady || spotifyGralo) return@postDelayed
+            if (proba == 0) wznowSpotify(1)
+            else {
+                LogMowy.dodaj("Spotify nadal nie gra, uruchamiam playlistę od nowa")
+                spotify?.let { runCatching { SpotifyAppRemote.disconnect(it) } }; spotify = null
+                startSpotify(pl.uri, pl.utwory)
             }
-        }, 4000)
+        }, if (proba == 0) 5000L else 7000L)
     }
 
     private fun grajSpotify(s: Stacja) {
