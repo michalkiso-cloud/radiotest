@@ -341,6 +341,7 @@ const czekaj = (ms) => new Promise(ok => setTimeout(ok, ms));
 const diFm = (a) => (a || "").includes("di.fm");
 
 async function graj(s, zLosowania = false) {
+  if (s.adres.startsWith("spotify:")) { status("Spotify w przeglądarce jeszcze nie działa."); return; }
   if (s.adres.includes(ZN_DI) && !(U.kluczDi || "").trim()) { status("Najpierw wpisz i zapisz klucz DI.FM (na dole zakładki Stacje)."); return; }
   status("Łączę...");
   await przygotujDzwiek(); await ctx.resume();
@@ -402,8 +403,9 @@ function stop() {
 
 // ---------- Losowanie (jak w aplikacji) ----------
 function wylosuj(bez) {
-  let pula = U.losowanie.filter(l => l.id !== bez && stacja(l.id));
-  if (!pula.length) pula = U.losowanie.filter(l => stacja(l.id));
+  const ok = (id) => stacja(id) && !stacja(id).adres.startsWith("spotify:");
+  let pula = U.losowanie.filter(l => l.id !== bez && ok(l.id));
+  if (!pula.length) pula = U.losowanie.filter(l => ok(l.id));
   const suma = pula.reduce((a, l) => a + l.waga, 0); if (suma <= 0) return null;
   let r = Math.random() * suma;
   for (const l of pula) { r -= l.waga; if (r < 0) return stacja(l.id); }
