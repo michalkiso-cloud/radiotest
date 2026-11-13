@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="pl"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Radio</title>
+<link rel="icon" href="/f/ikona.png">
+<style>
+:root{--bg:#fef7ff;--fg:#1d1b20;--fg2:#49454f;--karta:#f3edf7;--linia:#cac4d0;--prim:#6750a4;--onprim:#fff;
+--sec:#e8def8;--onsec:#1d192b;--zielony:#2e7d32;--tytul:#6750a4;--tytulw:600;--auto:#ad1457;--rmf:#2e7d32;--mowa:#43a047;--pole:#fff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141218;--fg:#e6e0e9;--fg2:#cac4d0;--karta:#211f26;
+--linia:#49454f;--prim:#d0bcff;--onprim:#381e72;--sec:#4a4458;--onsec:#e8def8;--tytul:#ffeb3b;--tytulw:400;--auto:#f48fb1;--rmf:#81c784;--pole:#1d1b20}}
+:root[data-theme="dark"]{--bg:#141218;--fg:#e6e0e9;--fg2:#cac4d0;--karta:#211f26;--linia:#49454f;--prim:#d0bcff;--onprim:#381e72;
+--sec:#4a4458;--onsec:#e8def8;--tytul:#ffeb3b;--tytulw:400;--auto:#f48fb1;--rmf:#81c784;--pole:#1d1b20}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0000}
+body{background:var(--bg);color:var(--fg);font:14px/1.4 Roboto,"Segoe UI",system-ui,sans-serif}
+#app{max-width:430px;height:100%;margin:0 auto;display:flex;flex-direction:column;background:var(--bg);border-left:1px solid var(--linia);border-right:1px solid var(--linia)}
+@media (max-width:440px){#app{border:0}}
+.zakladki{display:flex;border-bottom:1px solid var(--linia)}
+.zakladki button{flex:1;background:none;border:0;color:var(--fg2);font:500 14px/1 inherit;padding:15px 0 13px;border-bottom:3px solid transparent;cursor:pointer}
+.zakladki button.akt{color:var(--prim);border-bottom-color:var(--prim)}
+#tresc{flex:1;overflow-y:auto;position:relative}
+.strona{padding:12px}
+.karta{display:flex;align-items:center;background:var(--karta);border-radius:12px;padding:6px 4px 6px 14px;margin-bottom:8px;cursor:pointer}
+.karta.gra{background:var(--zielony);color:#fff}
+.karta .op{flex:1;min-width:0}
+.karta .n{font-weight:500}
+.karta .m{font-size:12px;opacity:.85}
+.ik{background:none;border:0;color:inherit;width:40px;height:40px;border-radius:20px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.ik:hover{background:#8881}
+.ik svg{width:22px;height:22px;fill:currentColor}
+.fab{position:sticky;float:right;bottom:16px;margin:0 4px 0 0;width:56px;height:56px;border-radius:16px;border:0;background:var(--sec);color:var(--onsec);font-size:28px;cursor:pointer;box-shadow:0 2px 6px #0004}
+h3{font-size:14px;margin:16px 0 8px}
+hr{border:0;border-top:1px solid var(--linia);margin:10px 0}
+.male{font-size:12px;color:var(--fg2)}
+.przyc{background:var(--prim);color:var(--onprim);border:0;border-radius:20px;padding:10px 16px;font:500 14px inherit;cursor:pointer;width:100%}
+.obr{background:none;color:var(--prim);border:1px solid var(--linia);border-radius:20px;padding:9px 14px;font:500 14px inherit;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.obr:disabled{opacity:.4;cursor:default}
+.tekst{background:none;border:0;color:var(--prim);font:500 14px inherit;cursor:pointer;padding:8px}
+input[type=text],input[type=password],input[type=number]{width:100%;padding:12px;border-radius:6px;border:1px solid var(--linia);background:var(--pole);color:var(--fg);font:inherit}
+label.pole{display:block;font-size:12px;color:var(--fg2);margin:6px 0 2px}
+.opcja{display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer}
+.opcja input{width:18px;height:18px;accent-color:var(--prim);margin:0 6px}
+.pigulki{display:flex;flex-wrap:wrap;gap:8px}
+.pig{background:var(--sec);color:var(--onsec);border:0;border-radius:20px;padding:8px 14px;font:14px inherit;cursor:pointer}
+.pig.gra{background:var(--zielony);color:#fff}
+.krok{display:flex;align-items:center;gap:6px;padding:2px 0}
+.krok span.e{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.krok button{width:44px;height:34px;border-radius:17px;border:1px solid var(--linia);background:none;color:var(--prim);font-size:18px;cursor:pointer}
+.krok b{width:60px;text-align:center;font-weight:500}
+#panel{border-top:1px solid var(--linia);padding:6px 16px 10px}
+.wiersz{display:flex;align-items:center;gap:10px}
+#okladka{width:56px;height:56px;border-radius:8px;flex:none;background:#5b2a9e center/cover;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:11px;text-align:center;overflow:hidden;line-height:1.1;padding:3px}
+#stacja{font-weight:700;font-size:17px}
+#utwor{font-size:17px;color:var(--tytul);font-weight:var(--tytulw);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#rmfInfo{color:var(--rmf);font-weight:700}
+#status,#autoInfo{font-size:12px}
+#autoInfo{color:var(--auto)}
+#logLink{font-size:12px;font-weight:700;color:var(--prim);cursor:pointer;padding:6px 4px 2px 12px}
+#kreska{height:2px;background:var(--prim);margin:6px 0 0}
+.przyciski{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.przyciski .rzad{display:flex;gap:8px}
+.przyciski .rzad .obr{flex:1}
+.kw{display:inline-block;width:13px;height:13px;background:currentColor}
+.pz{display:inline-flex;gap:4px}.pz i{display:inline-block;width:4px;height:14px;background:currentColor}
+#motyw{font-size:28px;color:var(--prim)}
+#menuMotywu{position:absolute;right:16px;bottom:150px;background:var(--karta);border-radius:8px;box-shadow:0 4px 12px #0006;padding:6px 0;display:none;z-index:5}
+#menuMotywu div{padding:10px 18px;cursor:pointer}
+#menuMotywu div:hover{background:#8882}
+#log{font:12px/15px ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+#log .mowa{color:var(--mowa)}
+dialog{border:0;border-radius:24px;background:var(--karta);color:var(--fg);padding:22px;max-width:360px;width:calc(100% - 32px)}
+dialog::backdrop{background:#0008}
+dialog h2{font-size:20px;font-weight:400;margin:0 0 14px}
+dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
+#zaslona{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:10;cursor:pointer}
+#zaslona div{background:var(--karta);color:var(--fg);padding:24px;border-radius:20px;font-size:16px;text-align:center;max-width:300px}
+</style>
+</head><body>
+<div id="app">
+  <div class="zakladki" id="zakladki">
+    <button data-z="0" class="akt">Stacje</button><button data-z="1">Losowanie</button><button data-z="2">Mowa</button>
+  </div>
+  <div id="tresc"></div>
+  <div id="panel">
+    <div class="wiersz">
+      <div id="okladka"></div>
+      <div style="flex:1;min-width:0">
+        <div id="stacja">Nic nie gra</div>
+        <div id="utwor"></div>
+      </div>
+      <button class="ik" id="motyw" title="Motyw">◐</button>
+    </div>
+    <div id="rmfInfo" hidden>Teraz gra RMF24 (mowa)</div>
+    <div class="wiersz" style="align-items:flex-end">
+      <div style="flex:1"><div id="status">Wybierz stację.</div><div id="autoInfo" hidden></div></div>
+      <span id="logLink">Log</span>
+    </div>
+    <div id="kreska" hidden></div>
+    <div class="przyciski">
+      <button class="przyc" id="bLosuj">Graj losowo</button>
+      <div class="rzad">
+        <button class="obr" id="bPauza" disabled></button>
+        <button class="obr" id="bStop" disabled><span class="kw"></span>Stop</button>
+      </div>
+    </div>
+  </div>
+  <div id="menuMotywu"></div>
+</div>
+<div id="zaslona"><div>Kliknij, żeby zacząć grać</div></div>
+<dialog id="okno"></dialog>
+
+<script type="module">
+const WERSJA = "web 1.0";
+const MP = "/npm/@mediapipe/tasks-audio@0.10.14";
+const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
+const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
+const ZN_DI = "{KLUCZ_DI}";
+const RMF24 = "https://rs201-krk.rmfstream.pl/rmf_24";
+const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const noweId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
+const fmt1 = (v) => (v >= 0 ? "+" : "") + v.toFixed(1);
+const IK = {
+  graj: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+  edytuj: '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>',
+  usun: '<svg viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>',
+  stop: '<svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>',
+};
+
+// ---------- Ustawienia (w przeglądarce + schowek w Cloudflare) ----------
+function domyslne() {
+  const l = [["Disco Radio", "https://n44a-eu.rcs.revma.com/cvswvmyewzzuv", 4], ["EDM", "http://prem2.di.fm:80/mainstage?" + ZN_DI, 3],
+    ["FTB Club", "https://play.radioftb.net:8000/stream", 3], ["Eska2", "https://waw.ic.smcdn.pl/1380-1.mp3", 4],
+    ["Radio Cmp3", "https://s.radiocmp3.eu/stream256", 3], ["Club Sounds", "http://prem2.di.fm:80/club?" + ZN_DI, 3], ["RMF24", RMF24, 0]];
+  const u = { stacje: [], losowanie: [], kluczDi: "", motyw: 0, trybAuto: false, autoMin: 60, wzgledny: true, autostart: false,
+    mowa: { wl: true, margPocz: 4, margKon: 2, przejscie: 1 }, glos: { wl: true, cel: -10, maks: 1.5, kor: {} },
+    los: { dzienData: "", dzienId: null, autoId: null, autoSek: 0, aktywne: false }, zmiana: 0 };
+  for (const [n, a, w] of l) { const s = { id: noweId(), nazwa: n, adres: a }; u.stacje.push(s); if (w > 0) u.losowanie.push({ id: s.id, waga: w }); }
+  return u;
+}
+let U;
+try { U = JSON.parse(localStorage.getItem("radio") || "null"); } catch (e) { U = null; }
+if (!U || !U.stacje) U = domyslne();
+{ const d = domyslne(); for (const k of Object.keys(d)) if (U[k] === undefined) U[k] = d[k]; for (const k of ["mowa", "glos", "los"]) U[k] = { ...d[k], ...U[k] }; }
+let zapisTimer = 0;
+function zapisz(wysylaj = true) {
+  if (wysylaj) U.zmiana = Date.now();
+  try { localStorage.setItem("radio", JSON.stringify(U)); } catch (e) {}
+  if (wysylaj) { clearTimeout(zapisTimer); zapisTimer = setTimeout(wyslijUst, 3000); }
+}
+// do schowka nie trafia stan licznika (zmienia się co 5 s)
+function doSchowka() { const k = { ...U }; return JSON.stringify(k); }
+async function wyslijUst() { try { await fetch("/ust", { method: "PUT", body: doSchowka() }); } catch (e) {} }
+async function pobierzUst() {
+  try {
+    const r = await fetch("/ust", { cache: "no-store" });
+    if (!r.ok) return;
+    const z = await r.json();
+    if (z && z.stacje && (z.zmiana || 0) > (U.zmiana || 0)) { U = { ...U, ...z }; zapisz(false); rysuj(); dodajLog("Ustawienia pobrane ze schowka"); }
+  } catch (e) {}
+}
+const stacja = (id) => U.stacje.find(s => s.id === id);
+const wLosowaniu = (id) => U.losowanie.some(l => l.id === id);
+function procent(id) { const s = U.losowanie.reduce((a, l) => a + l.waga, 0); const l = U.losowanie.find(l => l.id === id); return s > 0 && l ? 100 * l.waga / s : 0; }
+function ustawProcent(id, p) {
+  const l = U.losowanie.find(l => l.id === id); if (!l) return;
+  const reszta = U.losowanie.filter(x => x.id !== id).reduce((a, x) => a + x.waga, 0); if (reszta <= 0) return;
+  p = Math.max(0.5, Math.min(99.5, p)); l.waga = p / (100 - p) * reszta; zapisz();
+}
+
+// ---------- Log ----------
+const LOG = [];
+function dodajLog(t) {
+  const d = new Date(), z = (n) => String(n).padStart(2, "0");
+  LOG.unshift(`${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())} ${t}`);
+  if (LOG.length > 300) LOG.pop();
+  if (pokazLog) rysujLog();
+}
+
+// ---------- Dźwięk ----------
+let ctx = null, master = null, gotowe = null;
+function adres(u, icy) { return "/s?u=" + encodeURIComponent(u.replace(ZN_DI, (U.kluczDi || "").trim())) + (icy ? "&icy=1" : ""); }
+async function przygotujDzwiek() {
+  if (gotowe) return gotowe;
+  gotowe = (async () => {
+    ctx = new AudioContext({ latencyHint: "playback" });
+    await ctx.audioWorklet.addModule("/f/dzwiek.js");
+    master = ctx.createGain(); master.connect(ctx.destination);
+  })();
+  return gotowe;
+}
+
+/** Strumień: fetch przez pośrednika, wycinanie metadanych ICY (tytuł), odtwarzanie przez MediaSource. */
+class Strumien {
+  constructor(el) { this.el = el; this.gen = 0; this.ab = null; this.naTytul = () => {}; this.naBlad = () => {}; }
+  stop() {
+    this.gen++; if (this.ab) this.ab.abort(); this.ab = null;
+    this.el.pause(); this.el.removeAttribute("src"); this.el.load();
+    if (this.url) { URL.revokeObjectURL(this.url); this.url = null; }
+  }
+  async start(u, icy) {
+    this.stop();
+    const g = this.gen, ab = new AbortController(); this.ab = ab;
+    const blad = (e) => { if (g === this.gen) this.naBlad(e); };
+    let r;
+    try { r = await fetch(adres(u, icy), { signal: ab.signal }); } catch (e) { if (e.name !== "AbortError") blad("sieć: " + e.message); return; }
+    if (g !== this.gen) return;
+    if (!r.ok) { blad("HTTP " + r.status); return; }
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    const metaint = parseInt(r.headers.get("icy-metaint") || "0", 10) || 0;
+    const mime = /aac|mp4/.test(ct) ? "audio/aac" : "audio/mpeg";
+    if (!window.MediaSource || !MediaSource.isTypeSupported(mime)) {
+      ab.abort(); this.el.src = adres(u, false); this.el.play().catch(e => blad(e.name)); return;
+    }
+    const ms = new MediaSource(); this.url = URL.createObjectURL(ms); this.el.src = this.url;
+    await new Promise(ok => ms.addEventListener("sourceopen", ok, { once: true }));
+    if (g !== this.gen) return;
+    const sb = ms.addSourceBuffer(mime); sb.mode = "sequence";
+    let kolejka = [], rozmiar = 0;
+    const pompa = () => {
+      if (g !== this.gen || sb.updating || !kolejka.length) return;
+      const b = new Uint8Array(rozmiar); let o = 0; for (const c of kolejka) { b.set(c, o); o += c.length; }
+      kolejka = []; rozmiar = 0;
+      try { sb.appendBuffer(b); } catch (e) {
+        if (e.name === "QuotaExceededError") { kolejka.unshift(b); rozmiar = b.length; przytnij(true); } else blad("bufor: " + e.name);
+      }
+    };
+    const przytnij = (mocno) => {
+      if (sb.updating || !sb.buffered.length) return;
+      const t = this.el.currentTime, s = sb.buffered.start(0);
+      if (t - s > (mocno ? 3 : 30)) { try { sb.remove(s, t - 2); } catch (e) {} }
+    };
+    sb.addEventListener("updateend", () => { przytnij(false); pompa(); });
+    this.el.play().catch(e => { if (e.name !== "AbortError") blad("odtwarzanie: " + e.name); });
+    // czytanie z wycinaniem metadanych
+    const rd = r.body.getReader();
+    let doMeta = metaint, faza = 0, metaDl = 0, meta = null, wMeta = 0;
+    try {
+      while (true) {
+        const { value, done } = await rd.read();
+        if (g !== this.gen) { rd.cancel().catch(() => {}); return; }
+        if (done) { blad("strumień się skończył"); return; }
+        if (!metaint) { kolejka.push(value); rozmiar += value.length; pompa(); continue; }
+        let i = 0;
+        while (i < value.length) {
+          if (faza === 0) {
+            const n = Math.min(doMeta, value.length - i);
+            if (n > 0) { const c = value.subarray(i, i + n); kolejka.push(c); rozmiar += n; i += n; doMeta -= n; }
+            if (doMeta === 0) faza = 1;
+          } else if (faza === 1) {
+            metaDl = value[i++] * 16;
+            if (metaDl === 0) { faza = 0; doMeta = metaint; } else { meta = new Uint8Array(metaDl); wMeta = 0; faza = 2; }
+          } else {
+            const n = Math.min(metaDl - wMeta, value.length - i);
+            meta.set(value.subarray(i, i + n), wMeta); wMeta += n; i += n;
+            if (wMeta === metaDl) { this.metadane(meta); faza = 0; doMeta = metaint; }
+          }
+        }
+        pompa();
+      }
+    } catch (e) { if (e.name !== "AbortError") blad("odczyt: " + e.message); }
+  }
+  metadane(b) {
+    let t; try { t = new TextDecoder("utf-8", { fatal: true }).decode(b); } catch (e) { t = new TextDecoder("windows-1250").decode(b); }
+    const m = t.match(/StreamTitle='(.*?)';/s);
+    if (m) this.naTytul(m[1].trim());
+  }
+}
+
+/** Gniazdo odtwarzacza stacji: element audio → wyrównywacz → głośność (przejścia). */
+class Gniazdo {
+  constructor() {
+    this.el = new Audio(); this.el.preload = "none";
+    this.zr = ctx.createMediaElementSource(this.el);
+    this.wyr = new AudioWorkletNode(ctx, "wyrownywacz", { outputChannelCount: [2] });
+    this.gain = ctx.createGain(); this.gain.gain.value = 0;
+    this.zr.connect(this.wyr); this.wyr.connect(this.gain); this.gain.connect(master);
+    this.poziom = NaN; this.wzm = 0;
+    this.wyr.port.onmessage = (e) => { this.poziom = e.data.poziom; this.wzm = e.data.wzmocnienie; };
+    this.str = new Strumien(this.el);
+    this.s = null; this.ostCzas = 0; this.ostRuch = 0;
+  }
+  ustawGlos(id) { this.wyr.port.postMessage({ ust: { wlaczone: U.glos.wl, cel: U.glos.cel, maks: U.glos.maks, korekta: U.glos.kor[id] || 0 } }); }
+  graj(s) { this.s = s; this.ustawGlos(s.id); this.wyr.port.postMessage({ reset: pamiecGlos[s.id] ?? (U.glos.kor[s.id] || 0) }); this.poziom = NaN; this.ostRuch = Date.now(); this.str.start(s.adres, true); }
+  stop() { this.str.stop(); this.s = null; this.gain.gain.cancelScheduledValues(0); this.gain.gain.value = 0; }
+  get gra() { return this.s && !this.el.paused && this.el.currentTime > 0; }
+}
+
+const pamiecGlos = {};
+let A = null, B = null, gl = null;   // gl = gniazdo grające
+let obecna = null, graTeraz = false, icyTytul = "", okladka = null, proby = 0, ponowTimer = 0, nrGraj = 0;
+
+function rampa(g, od, doo, s) {
+  const t = ctx.currentTime; g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(od, t); g.gain.linearRampToValueAtTime(doo, t + s);
+}
+const czasP = () => Math.max(0.2, Math.min(10, U.mowa.przejscie));
+const czekaj = (ms) => new Promise(ok => setTimeout(ok, ms));
+const diFm = (a) => (a || "").includes("di.fm");
+
+async function graj(s, zLosowania = false) {
+  if (s.adres.includes(ZN_DI) && !(U.kluczDi || "").trim()) { status("Najpierw wpisz i zapisz klucz DI.FM (na dole zakładki Stacje)."); return; }
+  await przygotujDzwiek(); await ctx.resume();
+  if (!A) { A = new Gniazdo(); B = new Gniazdo(); [A, B].forEach(podepnij); }
+  if (!zLosowania) { U.los.aktywne = false; zapisz(false); }
+  dodajLog("Start stacji: " + s.nazwa);
+  przerwijRmf();
+  const nr = ++nrGraj;
+  const poprzednia = obecna, stare = gl;
+  obecna = s; graTeraz = true; icyTytul = ""; okladka = null; proby = 0; clearTimeout(ponowTimer);
+  status("Łączę..."); rysujPanel(); rysuj();
+  const nowe = stare === A ? B : A;
+  const przenikaj = stare && stare.gra && poprzednia && !(diFm(poprzednia.adres) && diFm(s.adres));
+  if (stare && stare.gra && !przenikaj) {   // DI.FM → DI.FM: ściszenie, potem przełączenie
+    rampa(stare.gain, stare.gain.gain.value, 0, czasP()); await czekaj(czasP() * 1000);
+    if (nr !== nrGraj) return;
+    stare.stop();
+  } else if (stare && !przenikaj) stare.stop();
+  gl = nowe; nowe.graj(s);
+  const t0 = Date.now();
+  while (nr === nrGraj && !nowe.gra && Date.now() - t0 < 20000) await czekaj(100);
+  if (nr !== nrGraj) return;
+  rampa(nowe.gain, 0, 1, czasP());
+  if (przenikaj) { rampa(stare.gain, stare.gain.gain.value, 0, czasP()); setTimeout(() => { if (gl !== stare) stare.stop(); }, czasP() * 1000 + 100); }
+  if (nowe.gra) status("Gra.");
+  if (U.mowa.wl) nasluchStart(); else nasluchStop();
+}
+function podepnij(g) {
+  g.str.naTytul = (t) => { if (g !== gl) return; if (t !== icyTytul) { icyTytul = t; okladka = null; rysujPanel(); szukajOkladki(t); dodajLog("♪ " + t); } };
+  g.str.naBlad = (e) => { if (g !== gl || !graTeraz) return; ponow(e); };
+  g.el.addEventListener("playing", () => { if (g === gl) { proby = 0; status("Gra."); } });
+}
+const ODSTEPY = [2, 5, 15, 60, 120];
+function ponow(e) {
+  const s = ODSTEPY[Math.min(proby, ODSTEPY.length - 1)];
+  dodajLog(`Błąd strumienia: ${e} (próba ${proby + 1}), ponawiam za ${s} s`);
+  status(`Brak połączenia, ponawiam za ${s} s...`);
+  proby++; clearTimeout(ponowTimer);
+  ponowTimer = setTimeout(() => { if (graTeraz && obecna && gl) { gl.graj(obecna); gl.gain.gain.value = 1; } }, s * 1000);
+}
+
+function pauza() {
+  if (!obecna) return;
+  if (graTeraz) {
+    graTeraz = false; nrGraj++; clearTimeout(ponowTimer);
+    przerwijRmf(); nasluchStop();
+    if (gl) { const g = gl; rampa(g.gain, g.gain.gain.value, 0, 0.3); setTimeout(() => { if (!graTeraz) { A.stop(); B.stop(); } }, 350); }
+    status("Pauza."); dodajLog("Pauza");
+  } else graj(obecna, U.los.aktywne);
+  rysujPanel();
+}
+function stop() {
+  nrGraj++; graTeraz = false; obecna = null; icyTytul = ""; okladka = null; clearTimeout(ponowTimer);
+  przerwijRmf(); nasluchStop();
+  if (A) { A.stop(); B.stop(); }
+  U.los.aktywne = false; zapisz(false);
+  status("Zatrzymane."); rysujPanel(); rysuj();
+}
+
+// ---------- Losowanie (jak w aplikacji) ----------
+function wylosuj(bez) {
+  let pula = U.losowanie.filter(l => l.id !== bez && stacja(l.id));
+  if (!pula.length) pula = U.losowanie.filter(l => stacja(l.id));
+  const suma = pula.reduce((a, l) => a + l.waga, 0); if (suma <= 0) return null;
+  let r = Math.random() * suma;
+  for (const l of pula) { r -= l.waga; if (r < 0) return stacja(l.id); }
+  return stacja(pula[pula.length - 1].id);
+}
+const dzisiaj = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
+function losuj() {
+  if (!U.losowanie.length) { status("Dodaj stacje w zakładce Losowanie."); return; }
+  U.los.aktywne = true;
+  let s;
+  if (U.trybAuto) {
+    const b = U.los.autoId && wLosowaniu(U.los.autoId) ? stacja(U.los.autoId) : null;
+    if (b && U.los.autoSek < U.autoMin * 60) s = b;
+    else { s = wylosuj(U.los.autoId); if (s) { U.los.autoId = s.id; U.los.autoSek = 0; } }
+  } else {
+    const b = U.los.dzienData === dzisiaj() && U.los.dzienId && wLosowaniu(U.los.dzienId) ? stacja(U.los.dzienId) : null;
+    s = b || wylosuj(null);
+    if (!b && s) { U.los.dzienData = dzisiaj(); U.los.dzienId = s.id; }
+  }
+  zapisz();
+  if (s) graj(s, true);
+}
+
+// ---------- Nasłuch RMF24 + YAMNet + przełączanie (jak Nasluch.kt i RadioService.kt) ----------
+let klas = null, klasLaduje = null;
+async function zaladujYamnet() {
+  if (klas) return klas;
+  if (!klasLaduje) klasLaduje = (async () => {
+    try {
+      const { FilesetResolver, AudioClassifier } = await import(MP + "/audio_bundle.mjs");
+      const fs = await FilesetResolver.forAudioTasks(MP + "/wasm");
+      klas = await AudioClassifier.createFromOptions(fs, { baseOptions: { modelAssetPath: "/f/yamnet.tflite" }, maxResults: -1, scoreThreshold: 0 });
+      dodajLog("YAMNet załadowany");
+    } catch (e) { dodajLog("YAMNet niedostępny: " + e.message); klasLaduje = null; }
+    return klas;
+  })();
+  return klasLaduje;
+}
+
+const R = { el: null, str: null, node: null, wyr: null, gain: null, dziala: false, zapisane: 0, poz: 0, sr: 48000,
+  blok: null, wBloku: 0, ramkaBloku: 0, startBloku: 0, nrBloku: 0, seriaMowa: null, seriaN: 0, seriaStart: 0, werdykt: "?",
+  bloki: new Map(), ostWerdykt: "?", tryb: false, ostatniBlok: 0, poziom: NaN, wzm: 0, kolejka: Promise.resolve() };
+
+function rmfGraf() {
+  if (R.el) return;
+  R.el = new Audio(); R.el.preload = "none";
+  const zr = ctx.createMediaElementSource(R.el);
+  R.node = new AudioWorkletNode(ctx, "rmf", { outputChannelCount: [2] });
+  R.wyr = new AudioWorkletNode(ctx, "wyrownywacz", { outputChannelCount: [2] });
+  R.gain = ctx.createGain(); R.gain.gain.value = 0;
+  zr.connect(R.node); R.node.connect(R.wyr); R.wyr.connect(R.gain); R.gain.connect(master);
+  R.wyr.port.onmessage = (e) => { R.poziom = e.data.poziom; R.wzm = e.data.wzmocnienie; };
+  R.wyr.port.postMessage({ reset: U.glos.kor.rmf24 || 0 });
+  R.node.port.onmessage = (e) => {
+    const d = e.data;
+    if (d.stan) { R.zapisane = d.zapisane; R.poz = d.poz; R.sr = d.sr; }
+    else if (d.pcm) przyjmij(d.pcm, d.ramka);
+    else if (d.naCel) wrocZRmf();
+  };
+  R.str = new Strumien(R.el);
+  R.str.naBlad = (e) => { if (!R.dziala) return; dodajLog("RMF24: błąd " + e + ", ponawiam za 5 s"); setTimeout(() => { if (R.dziala) R.str.start(RMF24, false); }, 5000); };
+}
+function nasluchStart() {
+  if (!U.mowa.wl) { nasluchStop(); return; }
+  if (R.dziala) return;
+  rmfGraf();
+  zaladujYamnet();
+  R.dziala = true; R.bloki.clear(); R.ostWerdykt = "?";
+  R.blok = new Float32Array(BLOK_S * 16000); R.wBloku = 0; R.nrBloku = 0; R.seriaMowa = null; R.seriaN = 0; R.werdykt = "?";
+  R.ostatniBlok = Date.now();
+  R.node.port.postMessage({ reset: true });
+  R.str.start(RMF24, false);
+  dodajLog("Nasłuch RMF24: start"); rysujMowe();
+}
+function nasluchStop() {
+  if (!R.dziala) return;
+  R.dziala = false; R.str.stop(); R.werdykt = "?";
+  dodajLog("Nasłuch RMF24: stop"); rysujMowe();
+}
+function przyjmij(pcm, ramka) {
+  if (!R.dziala) return;
+  let i = 0;
+  while (i < pcm.length) {
+    if (R.wBloku === 0) { R.ramkaBloku = ramka + Math.round(i * R.sr / 16000); R.startBloku = Date.now(); }
+    const n = Math.min(pcm.length - i, R.blok.length - R.wBloku);
+    R.blok.set(pcm.subarray(i, i + n), R.wBloku); R.wBloku += n; i += n;
+    if (R.wBloku === R.blok.length) {
+      const x = R.blok, nr = R.nrBloku++, rs = R.ramkaBloku;
+      R.blok = new Float32Array(BLOK_S * 16000); R.wBloku = 0;
+      R.kolejka = R.kolejka.then(() => analizuj(x, nr, rs));
+    }
+  }
+}
+async function analizuj(x, nr, ramka) {
+  const m = await zaladujYamnet(); if (!m || !R.dziala) return;
+  const n = 15600; let sMowa = 0, sMuz = 0, ramki = 0, pierw = null, ost = null;
+  for (let st = 0; st + n <= x.length; st += n / 2) {
+    const wyn = m.classify(x.subarray(st, st + n), 16000);
+    const kat = wyn?.[0]?.classifications?.[0]?.categories || [];
+    let mowa = 0, muz = 0;
+    for (const c of kat) { if (c.index === IDX_MOWA) mowa = c.score; else if (c.index === IDX_MUZYKA) muz = c.score; }
+    sMowa += mowa; sMuz += muz; ramki++;
+    if (mowa >= PROG) { ost = (st + n) / 16000; if (pierw === null) pierw = st / 16000; }
+    if (ramki % 8 === 0) await czekaj(0);
+  }
+  if (!ramki || !R.dziala) return;
+  const sm = sMowa / ramki, smu = sMuz / ramki, jestMowa = sm >= PROG;
+  if (jestMowa === R.seriaMowa) R.seriaN++; else { R.seriaMowa = jestMowa; R.seriaN = 1; R.seriaStart = nr; }
+  if (jestMowa && R.seriaN >= POTW_MOWA) R.werdykt = "MOWA"; else if (!jestMowa && R.seriaN >= POTW_MUZYKA) R.werdykt = "MUZYKA";
+  const b = { nr, mowa: sm, muzyka: smu, pierw, ost, werdykt: R.werdykt, jestMowa, seriaStart: R.seriaStart, ramkaStart: ramka };
+  R.ostatniBlok = Date.now();
+  dodajLog(`blok: mowa ${sm.toFixed(2)} | muzyka ${smu.toFixed(2)} | ${jestMowa ? "mowa" : "muzyka"} | werdykt: ${R.werdykt}`);
+  naBlok(b); rysujMowe();
+}
+function naBlok(b) {
+  R.bloki.set(b.nr, b);
+  for (const k of R.bloki.keys()) if (k < b.nr - 15) R.bloki.delete(k);
+  const pop = R.ostWerdykt; R.ostWerdykt = b.werdykt;
+  if (!graTeraz || !obecna) return;
+  if (b.werdykt === "MOWA" && pop !== "MOWA" && !R.tryb) wejdzNaRmf(b.seriaStart);
+  else if (b.werdykt === "MUZYKA" && pop !== "MUZYKA" && R.tryb) ustawPowrot(b.seriaStart);
+}
+function wejdzNaRmf(ks) {
+  const kp = R.bloki.has(ks - COFNIJ_BLOKOW) ? ks - COFNIJ_BLOKOW : ks;
+  const baz = R.bloki.get(kp) || R.bloki.get(ks); if (!baz) return;
+  let start = baz.ramkaStart;
+  for (let kk = kp; kk <= ks; kk++) {
+    const b = R.bloki.get(kk); if (!b || b.pierw === null) continue;
+    start = b.ramkaStart + Math.round((b.pierw - U.mowa.margPocz) * R.sr);
+    dodajLog(`Początek mowy w bloku ${kk - ks >= 0 ? "+" : ""}${kk - ks}: ${b.pierw.toFixed(1)} s`);
+    break;
+  }
+  R.tryb = true;
+  R.wyr.port.postMessage({ ust: { wlaczone: U.glos.wl, cel: U.glos.cel, maks: U.glos.maks, korekta: U.glos.kor.rmf24 || 0 } });
+  R.node.port.postMessage({ start });
+  dodajLog(`→ RMF24 (opóźnienie ${Math.max(0, (R.zapisane - start) / R.sr).toFixed(0)} s)`);
+  rampa(R.gain, 0, 1, czasP());
+  if (gl) rampa(gl.gain, gl.gain.gain.value, 0, czasP());
+  rysujPanel();
+}
+function ustawPowrot(ks) {
+  const b = R.bloki.get(ks); if (!b) return;
+  const pop = R.bloki.get(ks - 1), M = U.mowa.margKon;
+  let koniec;
+  if (b.ost !== null) koniec = Math.min(KONIEC_MOWY_S, b.ost + M);
+  else if (pop && pop.ost !== null) koniec = (pop.ramkaStart - b.ramkaStart) / R.sr + pop.ost + M;
+  else koniec = KONIEC_MOWY_S;
+  const cel = b.ramkaStart + Math.round(koniec * R.sr);
+  dodajLog(`Koniec mowy: powrót ${koniec >= 0 ? "+" : ""}${koniec.toFixed(1)} s od początku bloku muzyki`);
+  if (R.poz >= cel) wrocZRmf(); else R.node.port.postMessage({ cel });
+}
+function wrocZRmf() {
+  if (!R.tryb) return;
+  R.tryb = false;
+  dodajLog("← powrót do radia głównego");
+  rampa(R.gain, R.gain.gain.value, 0, czasP());
+  if (gl) rampa(gl.gain, gl.gain.gain.value, 1, czasP());
+  setTimeout(() => { if (!R.tryb) R.node.port.postMessage({ stop: true }); }, czasP() * 1000 + 100);
+  rysujPanel();
+}
+function przerwijRmf() {
+  if (!R.node) return;
+  const byl = R.tryb; R.tryb = false;
+  R.node.port.postMessage({ stop: true });
+  R.gain.gain.cancelScheduledValues(0); R.gain.gain.value = 0;
+  if (byl) rysujPanel();
+}
+
+// ---------- Okładki (Deezer, potem iTunes; tylko gdy zgadza się wykonawca) ----------
+const czysc = (t) => t.replace(/\(.*?\)|\[.*?]/g, " ").replace(/\S+\.(eu|pl|com|net|fm)\b/gi, " ")
+  .replace(/\b(feat\.?|ft\.?|vs\.?|x)(\s|$)|&|,/gi, " ").replace(/\s+/g, " ").trim();
+const norm = (t) => t.normalize("NFD").replace(/\p{Mn}+/gu, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ");
+const pasuje = (a, b) => { const s = norm(a).split(" ").filter(x => x.length >= 3), w = norm(b); return s.length > 0 && s.some(x => w.includes(x)); };
+const pamiecOkl = new Map();
+async function szukajOkladki(t) {
+  if (pamiecOkl.has(t)) { const o = pamiecOkl.get(t); if (o && t === icyTytul) { okladka = o; rysujPanel(); } return; }
+  const cz = t.split(/ - | – /); let wynik = null;
+  if (cz.length >= 2) {
+    const wyk = czysc(cz[0]), tyt = czysc(cz.slice(1).join(" - ")), q = encodeURIComponent(wyk + " " + tyt);
+    if (wyk && tyt) {
+      try {
+        const d = await (await fetch(adres("https://api.deezer.com/search?limit=5&q=" + q))).json();
+        for (const o of d.data || []) if (pasuje(wyk, o.artist.name)) { wynik = o.album.cover_big; break; }
+      } catch (e) {}
+      if (!wynik) try {
+        const d = await (await fetch(adres("https://itunes.apple.com/search?entity=song&limit=5&country=PL&term=" + q))).json();
+        for (const o of d.results || []) if (pasuje(wyk, o.artistName)) { wynik = o.artworkUrl100.replace("100x100", "500x500"); break; }
+      } catch (e) {}
+    }
+  }
+  if (wynik) {
+    wynik = adres(wynik);
+    const ok = await new Promise(r => { const i = new Image(); i.onload = () => r(true); i.onerror = () => r(false); i.src = wynik; });
+    if (!ok) wynik = null;
+  }
+  pamiecOkl.set(t, wynik); if (pamiecOkl.size > 60) pamiecOkl.delete(pamiecOkl.keys().next().value);
+  if (wynik && t === icyTytul) { okladka = wynik; rysujPanel(); }
+}
+function logo(nazwa) {
+  const c = document.createElement("canvas"); c.width = c.height = 256; const g = c.getContext("2d");
+  let h = 0; for (const ch of nazwa) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  const od = (Math.abs(h) % 60) + 250;
+  const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, `hsl(${od} 75% 40%)`); gr.addColorStop(1, `hsl(${od} 85% 12%)`);
+  g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+  g.fillStyle = "#fff"; g.textAlign = "center"; g.font = "bold 60px Roboto, Segoe UI, sans-serif";
+  const sl = nazwa.split(" "), linie = sl.length > 1 && nazwa.length > 9 ? [sl.slice(0, Math.ceil(sl.length / 2)).join(" "), sl.slice(Math.ceil(sl.length / 2)).join(" ")] : [nazwa];
+  const dl = Math.max(...linie.map(l => g.measureText(l).width)); let fs = 60; if (dl > 215) fs = 60 * 215 / dl;
+  g.font = `bold ${fs}px Roboto, Segoe UI, sans-serif`;
+  let y = 128 - fs * 1.15 * (linie.length - 1) / 2 + fs * 0.35; for (const l of linie) { g.fillText(l, 128, y); y += fs * 1.15; }
+  return c.toDataURL();
+}
+const loga = {}; const logoDla = (n) => loga[n] || (loga[n] = logo(n));
+
+// ---------- Tik co 5 s: tryb auto, głośność, zawieszenia ----------
+let ostCiecie = "";
+setInterval(() => {
+  // ustawienia głośności na bieżąco
+  if (gl && gl.s) { gl.ustawGlos(gl.s.id); if (!isNaN(gl.poziom)) pamiecGlos[gl.s.id] = gl.wzm; }
+  if (R.wyr) R.wyr.port.postMessage({ ust: { wlaczone: U.glos.wl, cel: U.glos.cel, maks: U.glos.maks, korekta: U.glos.kor.rmf24 || 0 } });
+  rysujGlosnosc();
+  if (!graTeraz || !obecna) return;
+  // zawieszony strumień: brak postępu przez 20 s
+  if (gl && gl.s) {
+    const t = gl.el.currentTime;
+    if (t !== gl.ostCzas) { gl.ostCzas = t; gl.ostRuch = Date.now(); }
+    else if (Date.now() - gl.ostRuch > 20000 && !ponowTimer) { gl.ostRuch = Date.now(); ponow("brak danych od 20 s"); }
+  }
+  if (R.dziala && Date.now() - R.ostatniBlok > 60000) {
+    dodajLog("Nasłuch RMF24 zawieszony od 60 s, uruchamiam ponownie"); przerwijRmf(); nasluchStop(); nasluchStart();
+  }
+  const d = new Date(), min = d.getMinutes(), klucz = `${d.getDate()}-${d.getHours()}-${min}`;
+  if ((min === 28 || min === 58) && ostCiecie !== klucz && R.dziala && !R.tryb) {
+    ostCiecie = klucz; dodajLog(`Godzina x:${min} – nowy nasłuch RMF24`); nasluchStop(); nasluchStart();
+  }
+  if (!U.los.aktywne || !U.trybAuto) return;
+  if (R.tryb && U.wzgledny) return;
+  U.los.autoSek += TIK_S;
+  if (U.los.autoSek >= U.autoMin * 60) {
+    const s = wylosuj(U.los.autoId); U.los.autoSek = 0; U.los.autoId = s ? s.id : null; zapisz();
+    dodajLog("Auto: minął czas, zmiana stacji na " + (s ? s.nazwa : "(brak)"));
+    if (s) graj(s, true);
+  } else { zapisz(false); rysujPanel(); }
+}, TIK_S * 1000);
+setInterval(() => { if (ponowTimer && proby === 0) ponowTimer = 0; }, 1000);
+
+// ---------- Ekran ----------
+let zakladka = 0, pokazLog = false, statusTekst = "Wybierz stację.";
+function status(t) { statusTekst = t; $("#status").textContent = t; }
+
+function rysujPanel() {
+  const graRmf = R.tryb;
+  $("#stacja").textContent = obecna ? obecna.nazwa : "Nic nie gra";
+  $("#utwor").textContent = obecna && !graRmf ? icyTytul : "";
+  $("#rmfInfo").hidden = !graRmf;
+  const ok = $("#okladka");
+  const obraz = graRmf ? logoDla("RMF24") : okladka || (obecna ? logoDla(obecna.nazwa) : null);
+  ok.style.backgroundImage = obraz ? `url("${obraz}")` : "none";
+  ok.textContent = obraz ? "" : "Radio";
+  const auto = U.trybAuto && U.los.aktywne && obecna;
+  $("#autoInfo").hidden = !auto;
+  if (auto) $("#autoInfo").textContent = `Auto: wykorzystane ${Math.floor(U.los.autoSek / 60)} min z ${U.autoMin}`;
+  $("#kreska").hidden = !(obecna || pokazLog);
+  $("#logLink").style.visibility = pokazLog ? "hidden" : "visible";
+  $("#bPauza").disabled = $("#bStop").disabled = !obecna;
+  $("#bPauza").innerHTML = graTeraz ? '<span class="pz"><i></i><i></i></span>Pauza' : '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Wznów';
+  const tyt = graRmf ? "RMF24 (mowa)" : icyTytul;
+  document.title = obecna ? (graTeraz ? "▶ " : "❚❚ ") + (tyt ? tyt + " · " : "") + obecna.nazwa : "Radio";
+  if ("mediaSession" in navigator) {
+    navigator.mediaSession.metadata = obecna ? new MediaMetadata({ title: graRmf ? "Teraz gra RMF24" : (icyTytul || obecna.nazwa), artist: obecna.nazwa,
+      artwork: [{ src: obraz ? new URL(obraz, location.href).href : "", sizes: "256x256" }] }) : null;
+    navigator.mediaSession.playbackState = obecna ? (graTeraz ? "playing" : "paused") : "none";
+  }
+}
+
+function rysuj() {
+  document.querySelectorAll("#zakladki button").forEach(b => b.classList.toggle("akt", +b.dataset.z === zakladka));
+  $("#zakladki").style.display = pokazLog ? "none" : "flex";
+  if (pokazLog) return rysujLog();
+  [rysujStacje, rysujLosowanie, rysujMowe][zakladka]();
+  rysujPanel();
+}
+
+function rysujStacje() {
+  if (zakladka !== 0 || pokazLog) return;
+  let h = '<div class="strona">';
+  for (const s of U.stacje) {
+    const gra = obecna && s.id === obecna.id;
+    h += `<div class="karta${gra ? " gra" : ""}" data-graj="${s.id}"><div class="op"><div class="n">${esc(s.nazwa)}</div>
+      <div class="m">${wLosowaniu(s.id) ? "w losowaniu" : "poza losowaniem"}</div></div>
+      ${gra ? `<button class="ik" data-stop title="Stop">${IK.stop}</button>` : `<button class="ik" data-graj="${s.id}" title="Graj">${IK.graj}</button>`}
+      <button class="ik" data-edytuj="${s.id}" title="Edytuj">${IK.edytuj}</button><button class="ik" data-usun="${s.id}" title="Usuń">${IK.usun}</button></div>`;
+  }
+  h += `<hr style="margin-top:16px"><h3>Ustawienia</h3>
+    <label class="pole">Klucz DI.FM premium</label><input type="password" id="kluczDi" value="${esc(U.kluczDi || "")}" autocomplete="off">
+    <p><button class="obr" id="zapiszKlucz">Zapisz klucz</button></p>
+    <p class="male">Spotify w przeglądarce: w przygotowaniu.</p>
+    <p class="male">Wersja ${WERSJA}</p><div style="height:70px"></div></div>
+    <button class="fab" id="dodajSt" title="Dodaj stację">+</button>`;
+  $("#tresc").innerHTML = h;
+}
+
+function rysujLosowanie() {
+  if (zakladka !== 1 || pokazLog) return;
+  let p = "";
+  for (const l of U.losowanie) { const s = stacja(l.id); if (s) p += `<button class="pig${obecna && obecna.id === s.id ? " gra" : ""}" data-szansa="${s.id}">${esc(s.nazwa)}</button>`; }
+  $("#tresc").innerHTML = `<div class="strona" style="padding:14px">
+    <p class="male" style="margin-top:0">Stacje w losowaniu (kliknij nazwę, żeby zmienić szansę):</p>
+    <div class="pigulki">${p}<button class="pig" id="dodajLos">&nbsp; + &nbsp;</button></div>
+    <hr style="margin-top:18px"><h3>Ustawienia</h3>
+    <label class="opcja"><input type="checkbox" id="autostart" ${U.autostart ? "checked" : ""}>Graj losowo po otwarciu strony</label>
+    <label class="opcja"><input type="radio" name="tryb" value="0" ${!U.trybAuto ? "checked" : ""}>Losowanie raz dziennie</label>
+    <label class="opcja"><input type="radio" name="tryb" value="1" ${U.trybAuto ? "checked" : ""}>Losowanie co X minut</label>
+    ${U.trybAuto ? `<div style="padding-left:40px"><label class="pole">Liczba minut</label><input type="number" id="autoMin" min="1" max="1440" value="${U.autoMin}" style="width:160px">
+      <label class="opcja"><input type="radio" name="wzgl" value="1" ${U.wzgledny ? "checked" : ""}>Czas względny (minuty RMF24 się nie liczą)</label>
+      <label class="opcja"><input type="radio" name="wzgl" value="0" ${!U.wzgledny ? "checked" : ""}>Czas bezwzględny (liczy się też RMF24)</label></div>` : ""}
+  </div>`;
+}
+
+function krokomierz(id, etyk, v) {
+  return `<div class="krok"><span class="e">${esc(etyk)}</span><button data-kr="${id}" data-d="-1">−</button><b id="kr_${id}">${fmt1(v)}</b><button data-kr="${id}" data-d="1">+</button></div>`;
+}
+const KROKI = { cel: [-30, -3], maks: [0, 6] };
+function rysujMowe() {
+  if (zakladka !== 2 || pokazLog) return;
+  const st = U.stacje.filter(s => s.adres !== RMF24);
+  $("#tresc").innerHTML = `<div class="strona" style="padding:14px">
+    <label class="opcja"><input type="checkbox" id="mowaWl" ${U.mowa.wl ? "checked" : ""}>Wykrywanie mowy w RMF24 (od następnego włączenia stacji)</label>
+    <div style="font-weight:500" id="mowaStan">${R.dziala ? "Nasłuch RMF24 działa" : "Nasłuch wyłączony"}, werdykt: ${R.werdykt}</div>
+    <p class="male">Próg ${PROG}, blok ${BLOK_S} s, potwierdzenie: mowa ${POTW_MOWA}, muzyka ${POTW_MUZYKA}. Przy werdykcie MOWA gra RMF24 od początku mowy, potem płynny powrót.</p>
+    <div style="display:flex;gap:8px"><div style="flex:1"><label class="pole">Margines początku (s)</label><input type="number" step="0.5" min="0" max="20" id="margPocz" value="${U.mowa.margPocz}"></div>
+    <div style="flex:1"><label class="pole">Margines końca (s)</label><input type="number" step="0.5" min="0" max="20" id="margKon" value="${U.mowa.margKon}"></div></div>
+    <label class="pole">Czas przejścia (s): RMF24 i zmiana stacji</label><input type="number" step="0.2" min="0.2" max="10" id="przejscie" value="${U.mowa.przejscie}">
+    <hr style="margin:16px 0">
+    <div style="font-size:16px;font-weight:700">Głośność</div>
+    <label class="opcja"><input type="checkbox" id="glosWl" ${U.glos.wl ? "checked" : ""}>Wyrównywanie głośności</label>
+    <div style="font-weight:500;white-space:pre-line" id="glosOpis">—</div>
+    <p class="male">Pomiar w LUFS (0 = maksimum, mowa RMF24 ok. −8,8). Zmiany wchodzą w ciągu kilku sekund. Limiter zawsze pilnuje, żeby nie było przesteru.</p>
+    ${krokomierz("cel", "Cel (LUFS)", U.glos.cel)}${krokomierz("maks", "Maks. podgłośnienie (dB)", U.glos.maks)}
+    <hr><div style="font-weight:500;margin-bottom:4px">Korekty ręczne (dB), dodawane do automatu</div>
+    ${st.map(s => krokomierz("k_" + s.id, s.nazwa, U.glos.kor[s.id] || 0)).join("")}
+    ${krokomierz("k_rmf24", "RMF24 (mowa)", U.glos.kor.rmf24 || 0)}
+  </div>`;
+  rysujGlosnosc();
+}
+function rysujGlosnosc() {
+  const e = document.getElementById("glosOpis"); if (!e) return;
+  const p = (v) => isNaN(v) ? "mierzę…" : v.toFixed(1) + " LUFS";
+  let t = gl && gl.s && graTeraz ? `${gl.s.nazwa}: poziom ${p(gl.poziom)}, wzmocnienie ${fmt1(gl.wzm)} dB` : "—";
+  if (R.tryb) t += `\nRMF24: poziom ${p(R.poziom)}, wzmocnienie ${fmt1(R.wzm)} dB`;
+  e.textContent = t;
+  const m = document.getElementById("mowaStan"); if (m) m.textContent = `${R.dziala ? "Nasłuch RMF24 działa" : "Nasłuch wyłączony"}, werdykt: ${R.werdykt}`;
+}
+function rysujLog() {
+  $("#tresc").innerHTML = `<div class="strona"><div class="wiersz"><button class="tekst" id="wrocLog">← Wróć</button><span style="flex:1"></span><b style="padding-right:8px">Log</b></div>
+    <div id="log">${LOG.map(w => `<div${w.includes("| mowa |") ? ' class="mowa"' : ""}>${esc(w)}</div>`).join("")}</div></div>`;
+}
+
+// ---------- Okna ----------
+const okno = $("#okno");
+function pokazOkno(html, wiaz) { okno.innerHTML = html; wiaz && wiaz(); if (!okno.open) okno.showModal(); }
+const zamknij = () => okno.close();
+okno.addEventListener("click", (e) => { if (e.target === okno) zamknij(); });
+
+function oknoStacji(s) {
+  pokazOkno(`<h2>${s ? "Edycja stacji" : "Nowa stacja"}</h2>
+    <label class="pole">Nazwa</label><input type="text" id="oNazwa" value="${esc(s ? s.nazwa : "")}">
+    <label class="pole">Adres URL strumienia</label><input type="text" id="oAdres" value="${esc(s ? s.adres : "")}">
+    <p class="male">Adres zaczyna się od http:// albo https://. W adresach DI.FM zamiast klucza możesz wpisać ${ZN_DI}. Nowe serwery trzeba też dopisać w pośredniku (powiedz Claude).</p>
+    <div class="dol"><button class="tekst" id="oAnuluj">Anuluj</button><button class="tekst" id="oZapisz">Zapisz</button></div>`, () => {
+    $("#oAnuluj").onclick = zamknij;
+    $("#oZapisz").onclick = () => {
+      const n = $("#oNazwa").value.trim(), a = $("#oAdres").value.trim();
+      if (!n || !/^https?:\/\//.test(a)) return;
+      if (s) { s.nazwa = n; s.adres = a; } else U.stacje.push({ id: noweId(), nazwa: n, adres: a });
+      zapisz(); zamknij(); rysuj();
+    };
+  });
+}
+function oknoUsun(s) {
+  pokazOkno(`<h2>Usunąć stację?</h2><p>${esc(s.nazwa)}</p><div class="dol"><button class="tekst" id="oAnuluj">Anuluj</button><button class="tekst" id="oTak">Usuń</button></div>`, () => {
+    $("#oAnuluj").onclick = zamknij;
+    $("#oTak").onclick = () => { U.stacje = U.stacje.filter(x => x.id !== s.id); U.losowanie = U.losowanie.filter(x => x.id !== s.id); zapisz(); zamknij(); rysuj(); };
+  });
+}
+function oknoSzansy(s) {
+  const jedyna = U.losowanie.length < 2;
+  pokazOkno(`<h2>${esc(s.nazwa)}</h2><div style="font-size:16px;font-weight:500" id="oProc">Szansa wylosowania: ${procent(s.id).toFixed(1).replace(".", ",")}%</div>
+    ${jedyna ? "<p>To jedyna stacja w losowaniu.</p>" : `<p style="display:flex;gap:8px"><button class="obr" id="oMinus">− 1%</button><button class="obr" id="oPlus">+ 1%</button></p>
+    <div style="display:flex;gap:8px;align-items:center"><input type="text" id="oWpisz" placeholder="Wpisz %" style="width:120px"><button class="tekst" id="oUstaw">Ustaw</button></div>
+    <p class="male">Pozostałe stacje zachowują swoje proporcje.</p>`}
+    <div class="dol"><button class="tekst" id="oUsunL">Usuń z losowania</button><button class="tekst" id="oGotowe">Gotowe</button></div>`, () => {
+    const odsw = () => { $("#oProc").textContent = `Szansa wylosowania: ${procent(s.id).toFixed(1).replace(".", ",")}%`; };
+    $("#oGotowe").onclick = () => { zamknij(); rysuj(); };
+    $("#oUsunL").onclick = () => { U.losowanie = U.losowanie.filter(l => l.id !== s.id); zapisz(); zamknij(); rysuj(); };
+    if (!jedyna) {
+      $("#oMinus").onclick = () => { ustawProcent(s.id, procent(s.id) - 1); odsw(); };
+      $("#oPlus").onclick = () => { ustawProcent(s.id, procent(s.id) + 1); odsw(); };
+      $("#oUstaw").onclick = () => { const v = parseFloat($("#oWpisz").value.replace(",", ".")); if (!isNaN(v)) ustawProcent(s.id, v); $("#oWpisz").value = ""; odsw(); };
+    }
+  });
+}
+function oknoWyboru() {
+  const wolne = U.stacje.filter(s => !wLosowaniu(s.id));
+  pokazOkno(`<h2>Dodaj do losowania</h2>${wolne.length ? wolne.map(s => `<div class="opcja" style="font-size:16px;padding:12px 0" data-wybierz="${s.id}">${esc(s.nazwa)}</div>`).join("") : "<p>Wszystkie stacje już biorą udział w losowaniu.</p>"}
+    <div class="dol"><button class="tekst" id="oZamknij">Zamknij</button></div>`, () => {
+    $("#oZamknij").onclick = zamknij;
+    okno.querySelectorAll("[data-wybierz]").forEach(e => e.onclick = () => {
+      const w = U.losowanie.length ? U.losowanie.reduce((a, l) => a + l.waga, 0) / U.losowanie.length : 4;
+      U.losowanie.push({ id: e.dataset.wybierz, waga: w }); zapisz(); zamknij(); rysuj();
+    });
+  });
+}
+
+// ---------- Zdarzenia ----------
+$("#zakladki").onclick = (e) => { const z = e.target.dataset.z; if (z !== undefined) { zakladka = +z; rysuj(); } };
+$("#logLink").onclick = () => { pokazLog = true; rysuj(); rysujPanel(); };
+$("#bLosuj").onclick = () => losuj();
+$("#bPauza").onclick = () => pauza();
+$("#bStop").onclick = () => stop();
+$("#tresc").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-graj],[data-stop],[data-edytuj],[data-usun],[data-szansa],#dodajSt,#dodajLos,#zapiszKlucz,#wrocLog,[data-kr]");
+  if (!t) return;
+  e.stopPropagation();
+  if (t.dataset.stop !== undefined) stop();
+  else if (t.dataset.edytuj) oknoStacji(stacja(t.dataset.edytuj));
+  else if (t.dataset.usun) oknoUsun(stacja(t.dataset.usun));
+  else if (t.dataset.graj) graj(stacja(t.dataset.graj));
+  else if (t.dataset.szansa) oknoSzansy(stacja(t.dataset.szansa));
+  else if (t.id === "dodajSt") oknoStacji(null);
+  else if (t.id === "dodajLos") oknoWyboru();
+  else if (t.id === "zapiszKlucz") { U.kluczDi = $("#kluczDi").value.trim(); zapisz(); status("Klucz DI.FM zapisany."); }
+  else if (t.id === "wrocLog") { pokazLog = false; rysuj(); }
+  else if (t.dataset.kr) {
+    const id = t.dataset.kr, d = +t.dataset.d * 0.5;
+    if (id === "cel" || id === "maks") { const [a, b] = KROKI[id]; U.glos[id] = Math.max(a, Math.min(b, U.glos[id] + d)); $("#kr_" + id).textContent = fmt1(U.glos[id]); }
+    else { const k = id.slice(2); U.glos.kor[k] = Math.max(-20, Math.min(6, (U.glos.kor[k] || 0) + d)); $("#kr_" + id).textContent = fmt1(U.glos.kor[k]); }
+    zapisz();
+  }
+});
+$("#tresc").addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.id === "autostart") U.autostart = t.checked;
+  else if (t.name === "tryb") { U.trybAuto = t.value === "1"; rysuj(); }
+  else if (t.name === "wzgl") U.wzgledny = t.value === "1";
+  else if (t.id === "autoMin") { const v = parseInt(t.value, 10); if (v > 0) U.autoMin = Math.min(1440, v); }
+  else if (t.id === "mowaWl") U.mowa.wl = t.checked;
+  else if (t.id === "glosWl") U.glos.wl = t.checked;
+  else if (["margPocz", "margKon", "przejscie"].includes(t.id)) {
+    const v = parseFloat(String(t.value).replace(",", ".")); if (!isNaN(v)) U.mowa[t.id] = t.id === "przejscie" ? Math.max(0.2, Math.min(10, v)) : Math.max(0, Math.min(20, v));
+  } else return;
+  zapisz(); rysujPanel();
+});
+// motyw
+const NAZWY_MOTYWU = ["Systemowy", "Jasny", "Ciemny"];
+function ustawMotyw() { if (U.motyw === 1) document.documentElement.dataset.theme = "light"; else if (U.motyw === 2) document.documentElement.dataset.theme = "dark"; else delete document.documentElement.dataset.theme; }
+$("#motyw").onclick = (e) => {
+  e.stopPropagation(); const m = $("#menuMotywu");
+  m.innerHTML = NAZWY_MOTYWU.map((n, i) => `<div data-m="${i}">${U.motyw === i ? "✓ " : "&nbsp;&nbsp;&nbsp; "}${n}</div>`).join("");
+  m.style.display = "block";
+};
+$("#menuMotywu").onclick = (e) => { const i = e.target.dataset.m; if (i !== undefined) { U.motyw = +i; zapisz(); ustawMotyw(); } $("#menuMotywu").style.display = "none"; };
+document.addEventListener("click", () => { $("#menuMotywu").style.display = "none"; });
+if ("mediaSession" in navigator) {
+  navigator.mediaSession.setActionHandler("play", () => { if (!graTeraz) { if (obecna) pauza(); else losuj(); } });
+  navigator.mediaSession.setActionHandler("pause", () => { if (graTeraz) pauza(); });
+  navigator.mediaSession.setActionHandler("stop", () => stop());
+  navigator.mediaSession.setActionHandler("nexttrack", () => { const s = wylosuj(obecna && obecna.id); if (s) graj(s); });
+}
+
+// do testów z konsoli
+window.radio = { R, naBlok, U };
+
+// ---------- Start ----------
+ustawMotyw(); rysuj(); pobierzUst();
+przygotujDzwiek().catch(e => status("Błąd dźwięku: " + e.message));
+if (U.autostart) {
+  const z = $("#zaslona"); z.style.display = "flex";
+  z.onclick = () => { z.style.display = "none"; losuj(); };
+}
+</script>
+</body></html>
