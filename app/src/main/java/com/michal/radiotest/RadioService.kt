@@ -399,10 +399,8 @@ class RadioService : MediaLibraryService() {
                 }
             } else if (player.mediaItemCount > 0) { nasluchStart(); wezFokus() }
             if (!trybSpotify) return
-            naSpotify {
-                if (playWhenReady) it.playerApi.resume() else it.playerApi.pause()
-                LogMowy.dodaj("Spotify: " + if (playWhenReady) "wznów" else "pauza")
-            }
+            if (playWhenReady) { spotifyGralo = false; wznowSpotify() }
+            else naSpotify { it.playerApi.pause(); LogMowy.dodaj("Spotify: pauza") }
         }
         override fun onPlaybackStateChanged(state: Int) {
             // log zacięć radia głównego (po tym, jak już grało)
@@ -855,6 +853,32 @@ class RadioService : MediaLibraryService() {
             .build()
     }
 
+    /** Wznowienie Spotify ze sprawdzeniem: po powrocie do auta Spotify bywa uruchomione od nowa
+     *  i „wznów” nic nie robi. Gdy po 4 s nadal stoi: drugie „wznów”, po kolejnych 4 s playlista od nowa. */
+    private fun wznowSpotify(proba: Int = 0) {
+        val pl = SpotifyUst.wybrana(this) ?: return
+        if (proba == 0) LogMowy.dodaj("Spotify: wznów")
+        naSpotify { r ->
+            r.playerApi.resume().setErrorCallback { if (trybSpotify) startSpotify(pl.uri, pl.utwory) }
+        }
+        handler.postDelayed({
+            if (!trybSpotify || trybRmf || !player.playWhenReady) return@postDelayed
+            naSpotify { r ->
+                r.playerApi.playerState.setResultCallback { st ->
+                    if (!trybSpotify || trybRmf || !player.playWhenReady) return@setResultCallback
+                    if (!st.isPaused && st.track != null) return@setResultCallback
+                    if (proba == 0 && st.track != null) {
+                        LogMowy.dodaj("Spotify nie ruszyło, ponawiam wznowienie")
+                        wznowSpotify(1)
+                    } else {
+                        LogMowy.dodaj("Spotify nie wznowiło się, uruchamiam playlistę od nowa")
+                        startSpotify(pl.uri, pl.utwory)
+                    }
+                }.setErrorCallback { if (trybSpotify) startSpotify(pl.uri, pl.utwory) }
+            }
+        }, 4000)
+    }
+
     private fun grajSpotify(s: Stacja) {
         val pl = SpotifyUst.wybrana(this)
         if (pl == null) {
@@ -880,9 +904,7 @@ class RadioService : MediaLibraryService() {
         val zLosu = StanLosowania.losujeTeraz(this)
         if (zLosu && prefs.getInt("spotify_los_nr", -1) == nrLosu()) {
             LogMowy.dodaj("Spotify: wznawiam (to samo losowanie)")
-            naSpotify { r ->
-                r.playerApi.resume().setErrorCallback { startSpotify(pl.uri, pl.utwory) }
-            }
+            wznowSpotify()
             return
         }
         prefs.edit().putInt("spotify_los_nr", if (zLosu) nrLosu() else -1).apply()
