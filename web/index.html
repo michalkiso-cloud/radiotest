@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.4";
+const WERSJA = "web 1.4.1";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -1037,6 +1037,12 @@ if ("mediaSession" in navigator) {
 
 // do testów z konsoli
 window.radio = { R, naBlok, U };
+
+// ---------- Osobne okno (skrót „otwórz jako okno” / zainstalowana strona): wąski rozmiar ----------
+try {
+  const okienko = matchMedia("(display-mode: standalone), (display-mode: minimal-ui), (display-mode: window-controls-overlay)").matches;
+  if (okienko && window.outerWidth > 600) window.resizeTo(460, Math.min(screen.availHeight, 940));
+} catch (e) {}
 
 // ---------- Start ----------
 if (!U.stacje.some(x => x.adres === SP_ADRES) && !U.spDodany) { U.stacje.push({ id: noweId(), nazwa: "Spotify", adres: SP_ADRES }); U.spDodany = true; zapisz(false); }
