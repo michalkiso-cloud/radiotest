@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.3.1";
+const WERSJA = "web 1.4";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -158,6 +158,7 @@ function doSchowka() {
     kluczDi: U.kluczDi || "", trybAuto: U.trybAuto, autoMin: U.autoMin, wzgledny: U.wzgledny,
     mowa: { ...U.mowa }, glos: { wl: U.glos.wl, cel: U.glos.cel, maks: U.glos.maks, kor },
     spotify: U.spotify || null,
+    auto: U.los.autoId && U.los.autoKiedy && stacja(U.los.autoId) ? { adres: stacja(U.los.autoId).adres, sek: U.los.autoSek, kiedy: U.los.autoKiedy } : null,
     dzien: U.los.dzienId && adr(U.los.dzienId) ? { data: U.los.dzienData, adres: adr(U.los.dzienId) } : null });
 }
 function zeSchowka(z) {
@@ -180,27 +181,52 @@ function zeSchowka(z) {
   U.zmiana = z.zmiana;
 }
 let schowek = true;
+// Stan trybu auto (stacja i wykorzystane sekundy) ma własny czas „kiedy”, niezależny od „zmiana” ustawień.
+function autoZeSchowka(z) {
+  const a = z && z.auto; if (!a || !a.adres || (a.kiedy || 0) <= (U.los.autoKiedy || 0)) return false;
+  const st = U.stacje.find(x => x.adres === a.adres); if (!st) return false;
+  U.los.autoId = st.id; U.los.autoSek = a.sek || 0; U.los.autoKiedy = a.kiedy;
+  return true;
+}
+async function pobierzZ() {
+  const r = await fetch("/ust", { cache: "no-store" });
+  if (r.status === 501) { schowek = false; return null; }
+  if (!r.ok) return null;
+  return await r.json();
+}
+/** Pobiera schowek, przyjmuje nowsze dane; zwraca true, gdy schowek ma coś starszego niż my (trzeba wysłać). */
+function przyjmijZ(z) {
+  let wyslac = false;
+  if (z && z.stacje && (z.zmiana || 0) > (U.zmiana || 0)) {
+    zeSchowka(z); rysuj();
+    dodajLog("Ustawienia pobrane ze schowka" + (z.zrodlo ? " (zapisał: " + z.zrodlo + ")" : ""));
+  } else if (!z || !z.stacje || (z.zmiana || 0) < (U.zmiana || 0)) wyslac = true;
+  if (autoZeSchowka(z)) { dodajLog("Tryb auto ze schowka: " + (stacja(U.los.autoId) || {}).nazwa + ", " + Math.floor(U.los.autoSek / 60) + " min"); rysujPanel(); }
+  else if (U.los.autoKiedy && (!z || !z.auto || (z.auto.kiedy || 0) < U.los.autoKiedy)) wyslac = true;
+  zapisz(false);
+  return wyslac;
+}
 async function wyslijUst(naKoniec) {
   if (!schowek) return;
   clearTimeout(zapisTimer); zapisTimer = 0;
-  try { await fetch("/ust", { method: "PUT", body: doSchowka(), keepalive: !!naKoniec }); } catch (e) {}
+  try {
+    if (!naKoniec) { const z = await pobierzZ(); if (!schowek) return; if (z) przyjmijZ(z); }
+    await fetch("/ust", { method: "PUT", body: doSchowka(), keepalive: !!naKoniec });
+  } catch (e) {}
 }
 async function pobierzUst() {
   if (!schowek) return;
-  try {
-    const r = await fetch("/ust", { cache: "no-store" });
-    if (r.status === 501) { schowek = false; return; }
-    if (!r.ok) return;
-    const z = await r.json();
-    if (z && z.stacje && (z.zmiana || 0) > (U.zmiana || 0)) {
-      zeSchowka(z); zapisz(false); rysuj();
-      dodajLog("Ustawienia pobrane ze schowka" + (z.zrodlo ? " (zapisał: " + z.zrodlo + ")" : ""));
-    } else if (!z || !z.stacje || (z.zmiana || 0) < (U.zmiana || 0)) wyslijUst();
-  } catch (e) {}
+  try { const z = await pobierzZ(); if (z && przyjmijZ(z)) await fetch("/ust", { method: "PUT", body: doSchowka() }); } catch (e) {}
+}
+/** Zapisuje stan trybu auto (nowe losowanie, pauza, co 5 min) i wysyła go. */
+function zapiszAuto(naKoniec) {
+  if (!U.trybAuto || !U.los.autoId) return;
+  U.los.autoKiedy = Date.now(); zapisz(false); wyslijUst(naKoniec);
 }
 // po powrocie na stronę: pobierz; przy wyjściu: wyślij niezapisane zmiany
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") pobierzUst();
+  else if (U.los.aktywne && U.trybAuto && graTeraz) zapiszAuto(true);
   else if (zapisTimer) { wyslijUst(true); zapisTimer = 0; }
 });
 setInterval(pobierzUst, 5 * 60 * 1000);
@@ -405,6 +431,7 @@ function pauza() {
     if (trybSp) spPauza();
     if (gl) { const g = gl; rampa(g.gain, g.gain.gain.value, 0, 0.3); setTimeout(() => { if (!graTeraz) { A.stop(); B.stop(); } }, 350); }
     status("Pauza."); dodajLog("Pauza");
+    if (U.los.aktywne) zapiszAuto();
   } else if (trybSp) { graTeraz = true; spWznow(); status("Gra."); if (U.mowa.wl) nasluchStart(); }
   else graj(obecna, U.los.aktywne);
   rysujPanel();
@@ -414,6 +441,7 @@ function stop() {
   przerwijRmf(); nasluchStop();
   if (trybSp) { trybSp = false; spPauza(); }
   if (A) { A.stop(); B.stop(); }
+  if (U.los.aktywne) zapiszAuto();
   U.los.aktywne = false; zapisz(false);
   status("Zatrzymane."); rysujPanel(); rysuj();
 }
@@ -530,7 +558,11 @@ function wylosuj(bez) {
   return stacja(pula[pula.length - 1].id);
 }
 const dzisiaj = () => { const d = new Date(), z = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`; };
-function losuj() {
+let losujeTeraz = false;
+async function losuj() {
+  if (losujeTeraz) return;
+  losujeTeraz = true; status("Łączę...");
+  try { await Promise.race([pobierzUst(), czekaj(3000)]); } finally { losujeTeraz = false; }
   if (!U.losowanie.length) { status("Dodaj stacje w zakładce Losowanie."); return; }
   U.los.aktywne = true;
   let s;
@@ -538,6 +570,7 @@ function losuj() {
     const b = U.los.autoId && wLosowaniu(U.los.autoId) ? stacja(U.los.autoId) : null;
     if (b && U.los.autoSek < U.autoMin * 60) s = b;
     else { s = wylosuj(U.los.autoId); if (s) { U.los.autoId = s.id; U.los.autoSek = 0; } }
+    if (s) U.los.autoKiedy = Date.now();
   } else {
     const b = U.los.dzienData === dzisiaj() && U.los.dzienId && wLosowaniu(U.los.dzienId) ? stacja(U.los.dzienId) : null;
     s = b || wylosuj(null);
@@ -760,10 +793,10 @@ setInterval(() => {
   if (R.tryb && U.wzgledny) return;
   U.los.autoSek += TIK_S;
   if (U.los.autoSek >= U.autoMin * 60) {
-    const s = wylosuj(U.los.autoId); U.los.autoSek = 0; U.los.autoId = s ? s.id : null; zapisz();
+    const s = wylosuj(U.los.autoId); U.los.autoSek = 0; U.los.autoId = s ? s.id : null; zapiszAuto();
     dodajLog("Auto: minął czas, zmiana stacji na " + (s ? s.nazwa : "(brak)"));
     if (s) graj(s, true);
-  } else { zapisz(false); rysujPanel(); }
+  } else { if (U.los.autoSek % 300 < TIK_S) zapiszAuto(); else zapisz(false); rysujPanel(); }
 }, TIK_S * 1000);
 setInterval(() => { if (ponowTimer && proby === 0) ponowTimer = 0; }, 1000);
 
