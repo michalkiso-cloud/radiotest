@@ -101,6 +101,15 @@ class RadioService : MediaLibraryService() {
             player.pause()
         }
     }
+    /** Czas ostatniego naszego polecenia start/wznów dla Spotify i liczba ponowień po nagłym zatrzymaniu. */
+    private var spotifyKomendaMs = 0L
+    private var spotifyPonowienia = 0
+    /** Ostatni zgłoszony stan Spotify (do wpisów w logu tylko przy zmianie). */
+    private var spotifyStanLog: Boolean? = null
+    private val ponowSpotify = Runnable {
+        if (spotifyPauza && trybSpotify && !trybRmf && player.playWhenReady)
+            naSpotify { it.playerApi.resume() }
+    }
     private var spotify: SpotifyAppRemote? = null
     private var spotifyUtwor = ""
     /** Okładka bieżącego utworu (radio: z Deezer/iTunes, Spotify: z App Remote); null = logo stacji. */
@@ -181,7 +190,7 @@ class RadioService : MediaLibraryService() {
         trybRmf = false
         LogMowy.dodaj("← powrót do radia głównego")
         odswiezOpis()
-        if (trybSpotify) naSpotify { it.playerApi.resume() }
+        if (trybSpotify) { spotifyKomendaMs = System.currentTimeMillis(); spotifyPonowienia = 0; naSpotify { it.playerApi.resume() } }
         przejscie(koniec = { rmf.stop(); LogMowy.graRmf.value = false }) { t ->
             rmf.ustawGlosnosc(1 - t)
             if (!trybSpotify) player.volume = t
@@ -873,6 +882,7 @@ class RadioService : MediaLibraryService() {
     private fun wznowSpotify(proba: Int = 0) {
         val pl = SpotifyUst.wybrana(this) ?: return
         LogMowy.dodaj(if (proba == 0) "Spotify: wznów" else "Spotify nie ruszyło, łączę od nowa i wznawiam")
+        spotifyKomendaMs = System.currentTimeMillis(); if (proba == 0) spotifyPonowienia = 0
         spotifyGralo = false
         if (proba > 0) { spotify?.let { runCatching { SpotifyAppRemote.disconnect(it) } }; spotify = null }
         naSpotify { r ->
@@ -932,6 +942,7 @@ class RadioService : MediaLibraryService() {
 
     /** Shuffle i start od losowego utworu; gdy indeks nie pasuje, start od początku. */
     private fun startSpotify(uri: String, utwory: Int) {
+        spotifyKomendaMs = System.currentTimeMillis(); spotifyPonowienia = 0
         naSpotify { r ->
             r.playerApi.setShuffle(true).setResultCallback {
                 if (utwory > 1) r.playerApi.skipToIndex(uri, los.nextInt(utwory))
@@ -955,7 +966,19 @@ class RadioService : MediaLibraryService() {
                 akcja(r)
                 r.playerApi.subscribeToPlayerState().setEventCallback { st ->
                     spotifyPauza = st.isPaused
-                    if (!st.isPaused) spotifyGralo = true
+                    if (trybSpotify && spotifyStanLog != st.isPaused) {
+                        spotifyStanLog = st.isPaused
+                        LogMowy.dodaj(if (st.isPaused) "Spotify: stoi" else "Spotify: gra")
+                    }
+                    if (!st.isPaused) { spotifyGralo = true; handler.removeCallbacks(sprawdzPauzeSpotify) }
+                    else if (trybSpotify && !trybRmf && player.playWhenReady &&
+                        System.currentTimeMillis() - spotifyKomendaMs < 20_000 && spotifyPonowienia < 3) {
+                        // zatrzymane zaraz po naszym starcie (np. Android Auto przełącza widok na Spotify): wznawiamy
+                        spotifyPonowienia++
+                        LogMowy.dodaj("Spotify stanęło zaraz po starcie, wznawiam ($spotifyPonowienia/3)")
+                        handler.removeCallbacks(ponowSpotify)
+                        handler.postDelayed(ponowSpotify, 1500)
+                    }
                     else if (spotifyGralo && trybSpotify && !trybRmf && player.playWhenReady) {
                         handler.removeCallbacks(sprawdzPauzeSpotify)
                         handler.postDelayed(sprawdzPauzeSpotify, 3000)
