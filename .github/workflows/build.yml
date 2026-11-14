@@ -2,7 +2,7 @@ name: Buduj APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
   workflow_dispatch:
 
 permissions:
@@ -41,8 +41,23 @@ jobs:
           echo "Używam: $AUTH"
           cp "$AUTH" app/libs/
 
+      - name: Pobierz model YAMNet
+        run: |
+          mkdir -p app/src/main/assets
+          curl -fsSL -o app/src/main/assets/yamnet.tflite \
+            "https://storage.googleapis.com/download.tensorflow.org/models/tflite/task_library/audio_classification/android/lite-model_yamnet_classification_tflite_1.tflite" \
+          || curl -fsSL -o app/src/main/assets/yamnet.tflite \
+            "https://tfhub.dev/google/lite-model/yamnet/classification/tflite/1?lite-format=tflite"
+          ls -la app/src/main/assets
+
       - name: Buduj
-        run: gradle :app:assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          if ! gradle :app:assembleDebug 2>&1 | tee build.log; then
+            echo "===== BŁĘDY KOMPILACJI ====="
+            grep -E "^e: |error:" build.log || true
+            exit 1
+          fi
 
       - name: Wydanie z APK
         env:
