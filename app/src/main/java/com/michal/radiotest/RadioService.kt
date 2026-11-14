@@ -412,6 +412,14 @@ class RadioService : MediaLibraryService() {
                 handler.removeCallbacks(bezStacji)
                 handler.postDelayed(bezStacji, 6000)
             }
+            // Spotify było stacją, ale po długiej pauzie tryb Spotify się zakończył (odtwarzacz przeszedł w spoczynek):
+            // uruchamiamy stację od nowa, zamiast grać ciszę
+            val o = obecna
+            if (playWhenReady && !trybSpotify && o != null && o.adres == SPOTIFY_ADRES) {
+                LogMowy.dodaj("Spotify po długiej pauzie: uruchamiam ponownie")
+                handler.post { if (player.playWhenReady) graj(o) }
+                return
+            }
             if (!trybSpotify) return
             if (playWhenReady) { spotifyGralo = false; wznowSpotify() }
             else naSpotify { it.playerApi.pause(); LogMowy.dodaj("Spotify: pauza") }
@@ -430,7 +438,7 @@ class RadioService : MediaLibraryService() {
             if (state == Player.STATE_READY) grałoOk = true
             if (state == Player.STATE_IDLE) { grałoOk = false; zacieOd = 0L }
             if (state == Player.STATE_IDLE) { przerwijRmf(); nasluch.stop(); if (!pauzaRozmowa) oddajFokus() }
-            if (state == Player.STATE_IDLE && trybSpotify) zakonczSpotify()
+            if (state == Player.STATE_IDLE && trybSpotify) { LogMowy.dodaj("Spotify: odtwarzacz w spoczynku, koniec trybu Spotify"); zakonczSpotify() }
         }
     }
 
