@@ -548,6 +548,14 @@ class MainActivity : ComponentActivity() {
                 Checkbox(checked = autostart, onCheckedChange = { ustawAutostart(it) })
                 Text("Graj losowo po uruchomieniu aplikacji", fontSize = 14.sp)
             }
+            var wznowAuto by remember { mutableStateOf(prefs.getBoolean("wznow_auto", false)) }
+            Row(
+                Modifier.fillMaxWidth().clickable { wznowAuto = !wznowAuto; prefs.edit().putBoolean("wznow_auto", wznowAuto).apply() },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = wznowAuto, onCheckedChange = { wznowAuto = it; prefs.edit().putBoolean("wznow_auto", it).apply() })
+                Text("Wznów po połączeniu z Android Auto (wyłącz wtedy autostart muzyki w Android Auto)", fontSize = 14.sp)
+            }
             Opcja("Losowanie raz dziennie", !trybAuto) { ustawTryb(false) }
             Opcja("Losowanie co X minut", trybAuto) { ustawTryb(true) }
             if (trybAuto) Column(Modifier.padding(start = 40.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

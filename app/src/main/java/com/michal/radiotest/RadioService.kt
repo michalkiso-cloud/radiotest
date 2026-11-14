@@ -396,6 +396,7 @@ class RadioService : MediaLibraryService() {
                 else -> "powód $reason"
             }
             LogMowy.dodaj((if (playWhenReady) "Gra" else "PAUZA") + ": $powod")
+            if (playWhenReady) getSharedPreferences("ustawienia", MODE_PRIVATE).edit().putBoolean("pauza_auta", false).apply()
             handler.removeCallbacks(probaWznowienia)
             if (!playWhenReady && StanLosowania.losujeTeraz(this@RadioService)) Synchro.wyslijAuto()
             if (!playWhenReady) {
@@ -1052,6 +1053,18 @@ class RadioService : MediaLibraryService() {
         if (bylo != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED &&
             typ == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED)
             pauzaPoWyjsciu("rozłączone Android Auto")
+        // opcja „Wznów po połączeniu z Android Auto”: wznawiamy to, co zapauzowało wyjście z auta
+        if (bylo == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED &&
+            typ != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED) {
+            val u = getSharedPreferences("ustawienia", MODE_PRIVATE)
+            if (u.getBoolean("wznow_auto", false) && u.getBoolean("pauza_auta", false)) {
+                handler.postDelayed({
+                    if (player.playWhenReady) return@postDelayed
+                    LogMowy.dodaj("Połączono z Android Auto: wznawiam")
+                    if (player.mediaItemCount > 0 && obecna != null) player.play() else losujZeSchowkiem()
+                }, 3000)
+            }
+        }
     }
 
     private val zewnetrzne = setOf(
@@ -1074,6 +1087,8 @@ class RadioService : MediaLibraryService() {
         if (!player.playWhenReady) return
         LogMowy.dodaj("PAUZA: $powod")
         player.pause()
+        // do opcji „Wznów po połączeniu z Android Auto”
+        getSharedPreferences("ustawienia", MODE_PRIVATE).edit().putBoolean("pauza_auta", true).apply()
     }
 
     /** Po powrocie internetu: od razu próba wznowienia, bez czekania na kolejną próbę. */
