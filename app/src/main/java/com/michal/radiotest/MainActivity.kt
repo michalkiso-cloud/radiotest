@@ -96,7 +96,6 @@ import com.spotify.sdk.android.auth.AuthorizationResponse
 import kotlinx.coroutines.delay
 import java.util.Locale
 
-private val ZIELONY = Color(0xFF2E7D32)
 private const val KOD_SPOTIFY = 1337
 
 private fun procentTekst(p: Double) = String.format(Locale("pl"), "%.1f%%", p)
@@ -271,7 +270,7 @@ class MainActivity : ComponentActivity() {
                         fontWeight = FontWeight.Bold)
                     if (utwor.isNotEmpty() && !LogMowy.graRmf.value) Text(utwor, fontSize = 17.sp,
                         fontWeight = if (ciemny) FontWeight.Normal else FontWeight.SemiBold,
-                        color = if (ciemny) Color(0xFFFFEB3B) else MaterialTheme.colorScheme.primary,
+                        color = if (ciemny) (if (paleta == 5) Color(0xFFF3C98B) else Color(0xFFFFEB3B)) else MaterialTheme.colorScheme.primary,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 WyborMotywu()
@@ -284,7 +283,7 @@ class MainActivity : ComponentActivity() {
                     Text(status, style = MaterialTheme.typography.bodySmall)
                     if (trybAuto && losujeTeraz && stacja.isNotEmpty()) Text(
                         "Auto: wykorzystane $autoMin min z $autoLimit",
-                        color = if (ciemny) Color(0xFFF48FB1) else Color(0xFFAD1457),
+                        color = if (paleta == 5) (if (ciemny) Color(0xFFF3C98B) else Color(0xFF7A5640)) else if (ciemny) Color(0xFFF48FB1) else Color(0xFFAD1457),
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -340,7 +339,7 @@ class MainActivity : ComponentActivity() {
             items(magazyn.stacje, key = { it.id }) { s ->
                 val gra = s.nazwa == stacja
                 Card(
-                    colors = if (gra) CardDefaults.cardColors(containerColor = ZIELONY, contentColor = Color.White)
+                    colors = if (gra) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
                         else CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
                     modifier = Modifier.fillMaxWidth().clickable { graj(s) }
@@ -355,7 +354,7 @@ class MainActivity : ComponentActivity() {
                                 style = MaterialTheme.typography.bodySmall)
                         }
                         if (gra) IconButton(onClick = { stop() }) {
-                            Box(Modifier.size(16.dp).background(Color.White))
+                            Box(Modifier.size(16.dp).background(LocalContentColor.current))
                         } else IconButton(onClick = { graj(s) }) { Icon(Icons.Filled.PlayArrow, "Start") }
                         if (s.adres != SPOTIFY_ADRES)
                             IconButton(onClick = { onEdytuj(s) }) { Icon(Icons.Filled.Edit, "Edytuj") }
@@ -510,8 +509,8 @@ class MainActivity : ComponentActivity() {
         Surface(
             onClick = onClick,
             shape = RoundedCornerShape(50),
-            color = if (wyrozniona) ZIELONY else MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = if (wyrozniona) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
+            color = if (wyrozniona) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = if (wyrozniona) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
         ) {
             Text(tekst, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
         }

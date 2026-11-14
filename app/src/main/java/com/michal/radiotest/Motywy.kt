@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.Color
 
 /** Pastelowe palety kolorów (jasna i ciemna). 0 = fiołkowa (domyślna, jak dotąd). */
 object Motywy {
-    val nazwy = listOf("Fiołkowy", "Miętowy", "Brzoskwiniowy", "Błękitny", "Różany")
+    val nazwy = listOf("Fiołkowy", "Miętowy", "Brzoskwiniowy", "Błękitny", "Różany", "Cappuccino")
 
     private class P(
         val pri: Long, val priC: Long, val onPriC: Long, val sec: Long, val secC: Long, val onSecC: Long,
@@ -38,6 +38,11 @@ object Motywy {
           0xFFFFF8F8, 0xFFFFF8F8, 0xFFF5E5E7, 0xFFEFDFE1,
           0xFFFFB1C0, 0xFF551D2A, 0xFF72333F, 0xFFFFD9DF, 0xFFE4BDC3, 0xFF5B3F44, 0xFFFFD9DF,
           0xFF191113, 0xFF191113, 0xFF2A1F21, 0xFF35292B),
+        // cappuccino (jasny: krem i kawa z mlekiem, ciemny: espresso)
+        P(0xFF7A5640, 0xFFEADBCF, 0xFF2E1F15, 0xFF6E5E54, 0xFFEADBCF, 0xFF2E1F15,
+          0xFFFBF7F3, 0xFFFBF7F3, 0xFFF1E9E2, 0xFFEADFD6,
+          0xFFE2BFA6, 0xFF3F2A1C, 0xFF5C4030, 0xFFF1DFD2, 0xFFBCA89B, 0xFF4A382D, 0xFFF1DFD2,
+          0xFF1A1411, 0xFF1A1411, 0xFF2A211C, 0xFF352A24),
     )
 
     fun schemat(paleta: Int, ciemny: Boolean): ColorScheme {

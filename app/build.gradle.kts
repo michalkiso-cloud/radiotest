@@ -12,8 +12,8 @@ android {
         applicationId = "com.michal.radiotest"
         minSdk = 29
         targetSdk = 35
-        versionCode = 46
-        versionName = "4.6"
+        versionCode = 47
+        versionName = "4.7"
         manifestPlaceholders["redirectSchemeName"] = "radiotest"
         manifestPlaceholders["redirectHostName"] = "callback"
         manifestPlaceholders["redirectPathPattern"] = ".*"
