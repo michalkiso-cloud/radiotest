@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.5";
+const WERSJA = "web 1.6";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -129,9 +129,9 @@ const IK = {
 
 // ---------- Ustawienia (w przeglądarce + schowek w Cloudflare) ----------
 function domyslne() {
-  const l = [["Disco Radio", "https://n44a-eu.rcs.revma.com/cvswvmyewzzuv", 4], ["EDM", "http://prem2.di.fm:80/mainstage?" + ZN_DI, 3],
-    ["FTB Club", "https://play.radioftb.net:8000/stream", 3], ["Eska2", "https://waw.ic.smcdn.pl/1380-1.mp3", 4],
-    ["Radio Cmp3", "https://s.radiocmp3.eu/stream256", 3], ["Club Sounds", "http://prem2.di.fm:80/club?" + ZN_DI, 3], ["RMF24", RMF24, 0]];
+  const l = [["Disco Radio", "https://n44a-eu.rcs.revma.com/cvswvmyewzzuv", 16.7], ["EDM", "http://prem2.di.fm:80/mainstage?" + ZN_DI, 12.5],
+    ["FTB Club", "https://play.radioftb.net:8000/stream", 12.5], ["Eska2", "https://waw.ic.smcdn.pl/1380-1.mp3", 16.7],
+    ["Radio Cmp3", "https://s.radiocmp3.eu/stream256", 12.5], ["Club Sounds", "http://prem2.di.fm:80/club?" + ZN_DI, 12.5], ["RMF24", RMF24, 0]];
   const u = { stacje: [], losowanie: [], kluczDi: "", motyw: 0, trybAuto: false, autoMin: 60, wzgledny: true, autostart: false,
     mowa: { wl: true, margPocz: 4, margKon: 2, przejscie: 1 }, glos: { wl: true, cel: -10, maks: 1.5, kor: {} },
     los: { dzienData: "", dzienId: null, autoId: null, autoSek: 0, aktywne: false }, zmiana: 0 };
@@ -232,11 +232,17 @@ document.addEventListener("visibilitychange", () => {
 setInterval(pobierzUst, 5 * 60 * 1000);
 const stacja = (id) => U.stacje.find(s => s.id === id);
 const wLosowaniu = (id) => U.losowanie.some(l => l.id === id);
-function procent(id) { const s = U.losowanie.reduce((a, l) => a + l.waga, 0); const l = U.losowanie.find(l => l.id === id); return s > 0 && l ? 100 * l.waga / s : 0; }
+// Wagi losowania to wprost procenty (jak w aplikacji od 4.4). Suma nie musi wynosić 100: losowanie liczy proporcjonalnie.
+const pr = (v) => (Math.round(v * 10) / 10).toString().replace(".", ",");
+function procent(id) { const l = U.losowanie.find(l => l.id === id); return l ? l.waga : 0; }
+function sumaProcent() { return U.losowanie.filter(l => stacja(l.id)).reduce((a, l) => a + l.waga, 0); }
+function opisSumy() {
+  const s = sumaProcent(), r = Math.round((100 - s) * 10) / 10;
+  return r === 0 ? `Suma: 100%` : r > 0 ? `Suma: ${pr(s)}%, niewykorzystane ${pr(r)}%` : `Suma: ${pr(s)}%, ponad 100 o ${pr(-r)}%`;
+}
 function ustawProcent(id, p) {
   const l = U.losowanie.find(l => l.id === id); if (!l) return;
-  const reszta = U.losowanie.filter(x => x.id !== id).reduce((a, x) => a + x.waga, 0); if (reszta <= 0) return;
-  p = Math.max(0.5, Math.min(99.5, p)); l.waga = p / (100 - p) * reszta; zapisz();
+  l.waga = Math.round(Math.max(0.5, Math.min(100, p)) * 10) / 10; zapisz();
 }
 
 // ---------- Log ----------
@@ -868,10 +874,11 @@ function rysujStacje() {
 function rysujLosowanie() {
   if (zakladka !== 1 || pokazLog) return;
   let p = "";
-  for (const l of U.losowanie) { const s = stacja(l.id); if (s) p += `<button class="pig${obecna && obecna.id === s.id ? " gra" : ""}" data-szansa="${s.id}">${esc(s.nazwa)}</button>`; }
+  for (const l of U.losowanie) { const s = stacja(l.id); if (s) p += `<button class="pig${obecna && obecna.id === s.id ? " gra" : ""}" data-szansa="${s.id}">${esc(s.nazwa)} · ${pr(l.waga)}%</button>`; }
   $("#tresc").innerHTML = `<div class="strona" style="padding:14px">
     <p class="male" style="margin-top:0">Stacje w losowaniu (kliknij nazwę, żeby zmienić szansę):</p>
     <div class="pigulki">${p}<button class="pig" id="dodajLos">&nbsp; + &nbsp;</button></div>
+    <p class="male" style="margin:10px 0 0">${opisSumy()}</p>
     <hr style="margin-top:18px"><h3>Ustawienia</h3>
     <label class="opcja"><input type="checkbox" id="autostart" ${U.autostart ? "checked" : ""}>Graj losowo po otwarciu strony</label>
     <label class="opcja"><input type="radio" name="tryb" value="0" ${!U.trybAuto ? "checked" : ""}>Losowanie raz dziennie</label>
@@ -949,20 +956,18 @@ function oknoUsun(s) {
   });
 }
 function oknoSzansy(s) {
-  const jedyna = U.losowanie.length < 2;
-  pokazOkno(`<h2>${esc(s.nazwa)}</h2><div style="font-size:16px;font-weight:500" id="oProc">Szansa wylosowania: ${procent(s.id).toFixed(1).replace(".", ",")}%</div>
-    ${jedyna ? "<p>To jedyna stacja w losowaniu.</p>" : `<p style="display:flex;gap:8px"><button class="obr" id="oMinus">− 1%</button><button class="obr" id="oPlus">+ 1%</button></p>
+  pokazOkno(`<h2>${esc(s.nazwa)}</h2><div style="font-size:16px;font-weight:500" id="oProc"></div>
+    <p style="display:flex;gap:8px"><button class="obr" id="oMinus">− 1%</button><button class="obr" id="oPlus">+ 1%</button></p>
     <div style="display:flex;gap:8px;align-items:center"><input type="text" id="oWpisz" placeholder="Wpisz %" style="width:120px"><button class="tekst" id="oUstaw">Ustaw</button></div>
-    <p class="male">Pozostałe stacje zachowują swoje proporcje.</p>`}
+    <p class="male" id="oSuma"></p>
     <div class="dol"><button class="tekst" id="oUsunL">Usuń z losowania</button><button class="tekst" id="oGotowe">Gotowe</button></div>`, () => {
-    const odsw = () => { $("#oProc").textContent = `Szansa wylosowania: ${procent(s.id).toFixed(1).replace(".", ",")}%`; };
+    const odsw = () => { $("#oProc").textContent = `Szansa wylosowania: ${pr(procent(s.id))}%`; $("#oSuma").textContent = opisSumy(); };
+    odsw();
     $("#oGotowe").onclick = () => { zamknij(); rysuj(); };
     $("#oUsunL").onclick = () => { U.losowanie = U.losowanie.filter(l => l.id !== s.id); zapisz(); zamknij(); rysuj(); };
-    if (!jedyna) {
-      $("#oMinus").onclick = () => { ustawProcent(s.id, procent(s.id) - 1); odsw(); };
-      $("#oPlus").onclick = () => { ustawProcent(s.id, procent(s.id) + 1); odsw(); };
-      $("#oUstaw").onclick = () => { const v = parseFloat($("#oWpisz").value.replace(",", ".")); if (!isNaN(v)) ustawProcent(s.id, v); $("#oWpisz").value = ""; odsw(); };
-    }
+    $("#oMinus").onclick = () => { ustawProcent(s.id, procent(s.id) - 1); odsw(); };
+    $("#oPlus").onclick = () => { ustawProcent(s.id, procent(s.id) + 1); odsw(); };
+    $("#oUstaw").onclick = () => { const v = parseFloat($("#oWpisz").value.replace(",", ".")); if (!isNaN(v)) ustawProcent(s.id, v); $("#oWpisz").value = ""; odsw(); };
   });
 }
 function oknoWyboru() {
@@ -971,7 +976,7 @@ function oknoWyboru() {
     <div class="dol"><button class="tekst" id="oZamknij">Zamknij</button></div>`, () => {
     $("#oZamknij").onclick = zamknij;
     okno.querySelectorAll("[data-wybierz]").forEach(e => e.onclick = () => {
-      const w = U.losowanie.length ? U.losowanie.reduce((a, l) => a + l.waga, 0) / U.losowanie.length : 4;
+      const reszta = 100 - sumaProcent(), w = reszta >= 1 ? Math.round(reszta * 10) / 10 : 10;
       U.losowanie.push({ id: e.dataset.wybierz, waga: w }); zapisz(); zamknij(); rysuj();
     });
   });
