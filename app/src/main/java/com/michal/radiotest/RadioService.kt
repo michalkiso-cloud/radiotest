@@ -966,7 +966,7 @@ class RadioService : MediaLibraryService() {
                 akcja(r)
                 r.playerApi.subscribeToPlayerState().setEventCallback { st ->
                     spotifyPauza = st.isPaused
-                    if (trybSpotify && spotifyStanLog != st.isPaused) {
+                    if (trybSpotify && !trybRmf && spotifyStanLog != st.isPaused) {
                         spotifyStanLog = st.isPaused
                         LogMowy.dodaj(if (st.isPaused) "Spotify: stoi" else "Spotify: gra")
                     }
