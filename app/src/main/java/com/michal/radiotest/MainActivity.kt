@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
     private var kluczDi by mutableStateOf("")
     private var bateriaOk by mutableStateOf(false)
     private var motyw by mutableIntStateOf(0)        // 0 system, 1 jasny, 2 ciemny
+    private var paleta by mutableIntStateOf(0)       // Motywy.nazwy
     private var trybAuto by mutableStateOf(false)
     private var autoMin by mutableIntStateOf(0)
     private var autoLimit by mutableIntStateOf(60)
@@ -137,6 +138,7 @@ class MainActivity : ComponentActivity() {
         Synchro.poPrzyjeciu = { if (!isFinishing) recreate() }
         kluczDi = prefs.getString("klucz_di", "") ?: ""
         motyw = prefs.getInt("motyw", 0)
+        paleta = prefs.getInt("paleta", 0)
         trybAuto = StanLosowania.trybAuto(this)
         autoLimit = StanLosowania.autoMin(this)
         wzgledny = StanLosowania.wzgledny(this)
@@ -146,7 +148,7 @@ class MainActivity : ComponentActivity() {
         playlista = SpotifyUst.wybrana(this)
         setContent {
             val ciemny = when (motyw) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
-            val schemat = if (ciemny) darkColorScheme() else lightColorScheme()
+            val schemat = Motywy.schemat(paleta, ciemny)
             SideEffect {
                 // tryb jasny: ciemne ikony i napisy na pasku stanu
                 WindowCompat.getInsetsController(window, window.decorView).apply {
@@ -232,6 +234,17 @@ class MainActivity : ComponentActivity() {
                         onClick = {
                             motyw = i
                             prefs.edit().putInt("motyw", i).apply()
+                            otwarte = false
+                        }
+                    )
+                }
+                HorizontalDivider()
+                Motywy.nazwy.forEachIndexed { i, n ->
+                    DropdownMenuItem(
+                        text = { Text((if (paleta == i) "✓ " else "    ") + n) },
+                        onClick = {
+                            paleta = i
+                            prefs.edit().putInt("paleta", i).apply()
                             otwarte = false
                         }
                     )
@@ -327,7 +340,9 @@ class MainActivity : ComponentActivity() {
             items(magazyn.stacje, key = { it.id }) { s ->
                 val gra = s.nazwa == stacja
                 Card(
-                    colors = if (gra) CardDefaults.cardColors(containerColor = ZIELONY, contentColor = Color.White) else CardDefaults.cardColors(),
+                    colors = if (gra) CardDefaults.cardColors(containerColor = ZIELONY, contentColor = Color.White)
+                        else CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
                     modifier = Modifier.fillMaxWidth().clickable { graj(s) }
                 ) {
                     Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
@@ -517,10 +532,11 @@ class MainActivity : ComponentActivity() {
             ) {
                 magazyn.losowanie.forEach { los ->
                     val s = magazyn.stacja(los.id) ?: return@forEach
-                    Pigulka(s.nazwa, wyrozniona = s.nazwa == stacja) { onSzansa(s) }
+                    Pigulka("${s.nazwa} · ${procentTekst(los.waga)}", wyrozniona = s.nazwa == stacja) { onSzansa(s) }
                 }
                 Pigulka("  +  ", onClick = onDodaj)
             }
+            Text(opisSumy(), style = MaterialTheme.typography.bodySmall)
 
             Spacer(Modifier.height(8.dp))
             HorizontalDivider()
@@ -687,11 +703,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Ile procent zostało do 100 (albo ile jest ponad). */
+    private fun opisSumy(): String {
+        val r = magazyn.niewykorzystane()
+        return when {
+            kotlin.math.abs(r) < 0.05 -> "Suma: 100% ✓"
+            r > 0 -> "Niewykorzystane: ${procentTekst(r)}"
+            else -> "Ponad 100% o ${procentTekst(-r)} (losowanie liczy proporcjonalnie)"
+        }
+    }
+
     @Composable
     private fun OknoSzansy(s: Stacja, zamknij: () -> Unit) {
         val p = magazyn.procent(s.id)
         var tekst by remember { mutableStateOf("") }
-        val jedyna = magazyn.losowanie.size < 2
+        val jedyna = false
         AlertDialog(
             onDismissRequest = zamknij,
             title = { Text(s.nazwa) },
@@ -717,8 +743,9 @@ class MainActivity : ComponentActivity() {
                                 tekst = ""
                             }) { Text("Ustaw") }
                         }
-                        Text("Pozostałe stacje zachowują swoje proporcje.",
+                        Text("Pozostałe stacje się nie zmieniają.",
                             style = MaterialTheme.typography.bodySmall)
+                        Text(opisSumy(), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                     }
                 }
             },

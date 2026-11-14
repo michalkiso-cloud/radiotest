@@ -35,6 +35,13 @@ class Magazyn(ctx: Context) {
             losowanie.addAll((0 until l.length()).map { l.getJSONObject(it) }
                 .map { Los(it.getString("id"), it.optDouble("waga", 4.0)) })
         }
+        // 4.4: wagi stają się procentami – jednorazowo przeliczamy dotychczasowe proporcje na sumę 100
+        if (!prefs.getBoolean("wagi_procent", false)) {
+            val suma = losowanie.sumOf { it.waga }
+            if (suma > 0) for (i in losowanie.indices) losowanie[i] = losowanie[i].let { Los(it.id, Math.round(it.waga / suma * 1000) / 10.0) }
+            prefs.edit().putBoolean("wagi_procent", true).apply()
+            zapisz()
+        }
         if (!prefs.getBoolean("spotify_dodany", false)) {
             if (stacje.none { it.adres == SPOTIFY_ADRES }) stacje.add(Stacja(noweId(), "Spotify", SPOTIFY_ADRES))
             prefs.edit().putBoolean("spotify_dodany", true).apply()
@@ -83,8 +90,8 @@ class Magazyn(ctx: Context) {
 
     fun dodajDoLosowania(id: String) {
         if (!wLosowaniu(id)) {
-            // nowa stacja dostaje średnią wagę pozostałych
-            val w = if (losowanie.isEmpty()) 4.0 else losowanie.sumOf { it.waga } / losowanie.size
+            // nowa stacja dostaje niewykorzystane procenty (albo 1%, gdy nic nie zostało)
+            val w = niewykorzystane().takeIf { it >= 0.1 }?.let { Math.round(it * 10) / 10.0 } ?: 1.0
             losowanie.add(Los(id, w))
         }
         zapisz()
@@ -94,22 +101,20 @@ class Magazyn(ctx: Context) {
         losowanie.removeAll { it.id == id }; zapisz()
     }
 
-    /** Ustawia szansę stacji w procentach; pozostałe stacje zachowują swoje proporcje. */
+    /** Ustawia szansę stacji w procentach (waga = procent). Pozostałe stacje się nie zmieniają;
+     *  sumę do 100 pilnuje użytkownik (podgląd „niewykorzystane”). */
     fun ustawProcent(id: String, procent: Double) {
         val i = losowanie.indexOfFirst { it.id == id }
         if (i < 0) return
-        val reszta = losowanie.filter { it.id != id }.sumOf { it.waga }
-        if (reszta <= 0) return
-        val p = procent.coerceIn(0.5, 99.5)
-        losowanie[i] = Los(id, p / (100 - p) * reszta)
+        losowanie[i] = Los(id, Math.round(procent.coerceIn(0.1, 100.0) * 10) / 10.0)
         zapisz()
     }
 
-    fun procent(id: String): Double {
-        val suma = losowanie.sumOf { it.waga }
-        val w = losowanie.firstOrNull { it.id == id }?.waga ?: 0.0
-        return if (suma <= 0) 0.0 else 100 * w / suma
-    }
+    /** Szansa w procentach = waga (od 4.4 wagi są procentami). */
+    fun procent(id: String): Double = losowanie.firstOrNull { it.id == id }?.waga ?: 0.0
+
+    /** 100 minus suma wag (ujemne = ponad 100). */
+    fun niewykorzystane(): Double = 100.0 - losowanie.sumOf { it.waga }
 
     /** Lista ze strony (synchronizacja): stacje rozpoznawane po adresie, waga 0 = poza losowaniem. */
     /** Przyjęcie listy ze strony. Lokalne stacje, których adresu nie ma na liście (np. Spotify), zostają.
