@@ -136,6 +136,7 @@ class RadioService : MediaLibraryService() {
         val poprzedni = ostatniWerdykt
         ostatniWerdykt = b.werdykt
         if (!player.playWhenReady || player.mediaItemCount == 0) return
+        if (rozmowa()) return   // w czasie rozmowy telefonicznej nie przełączamy na RMF24
         if (b.werdykt == "MOWA" && poprzedni != "MOWA" && !trybRmf) wejdzNaRmf(b.seriaStart)
         else if (b.werdykt == "MUZYKA" && poprzedni != "MUZYKA" && trybRmf) ustawPowrot(b.seriaStart)
     }
@@ -264,6 +265,38 @@ class RadioService : MediaLibraryService() {
             }, handler)
             .build()
     }
+    /** Rozmowa telefoniczna (co 5 s): przy Spotify aplikacja nie ma fokusu dźwięku, więc sama nie dostaje
+     *  sygnału o rozmowie. Przerywamy RMF24 i radio, po rozmowie wznawiamy. */
+    private var rmfPrzezRozmowe = false
+    private fun pilnujRozmowy() {
+        if (rozmowa()) {
+            if (trybRmf) {
+                LogMowy.dodaj("Rozmowa telefoniczna: przerywam RMF24")
+                przerwijRmf()
+                rmfPrzezRozmowe = true
+            }
+            if (!trybSpotify && player.playWhenReady) {
+                pauzaRozmowa = true
+                LogMowy.dodaj("Rozmowa telefoniczna: pauza")
+                player.pause()
+            }
+        } else {
+            if (rmfPrzezRozmowe) {
+                rmfPrzezRozmowe = false
+                if (trybSpotify && player.playWhenReady) {
+                    LogMowy.dodaj("Koniec rozmowy: wznawiam Spotify")
+                    spotifyKomendaMs = System.currentTimeMillis(); spotifyPonowienia = 0
+                    naSpotify { it.playerApi.resume() }
+                }
+            }
+            if (pauzaRozmowa) {
+                pauzaRozmowa = false
+                LogMowy.dodaj("Koniec rozmowy: wznawiam")
+                player.play()
+            }
+        }
+    }
+
     private fun wezFokus() { if (!trybSpotify) am.requestAudioFocus(zadanieFokusu) }
     private fun oddajFokus() { am.abandonAudioFocusRequest(zadanieFokusu) }
 
@@ -640,6 +673,7 @@ class RadioService : MediaLibraryService() {
     private val tik = object : Runnable {
         override fun run() {
             handler.postDelayed(this, TIK_S * 1000L)
+            pilnujRozmowy()
             sprawdzZawieszenie()
             odswiezGlosnosc()
             // nasłuch RMF24 bez nowego bloku przez 60 s (np. zawieszony po utracie sieci): restart
