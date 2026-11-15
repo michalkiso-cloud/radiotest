@@ -1,0 +1,19 @@
+name: Głośność playlisty
+
+on:
+  push:
+    branches: ['claude/project-thread-6woqu7']
+    paths: ['narzedzia/glosnosc_playlisty.py', '.github/workflows/glosnosc.yml']
+  workflow_dispatch:
+
+jobs:
+  pomiar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: python3 narzedzia/glosnosc_playlisty.py 3Io0877AvJGvmH1LKqOdFi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wynik
+          path: wynik.md
