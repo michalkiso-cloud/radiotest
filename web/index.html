@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.7.1";
+const WERSJA = "web 1.7.2";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -662,7 +662,7 @@ async function analizuj(x, nr, ramka, gen) {
   if (R.oczekuje > 1) { dodajLog("Analiza nie nadąża – pomijam starszy blok"); return; }
   const w = await klasyfikuj(x);
   if (!w.okna || gen !== R.gen) return;
-  if (w.ms > 8000) dodajLog(`Uwaga: analiza bloku trwała ${(w.ms / 1000).toFixed(1)} s (komputer zajęty albo okno uśpione)`);
+  if (w.ms > 16000) dodajLog(`Uwaga: analiza bloku trwała ${(w.ms / 1000).toFixed(1)} s (komputer zajęty albo okno uśpione)`);
   const n = 15600; let sMowa = 0, sMuz = 0, ramki = 0, pierw = null, ost = null;
   for (const [st, mowa, muz] of w.okna) {
     sMowa += mowa; sMuz += muz; ramki++;
