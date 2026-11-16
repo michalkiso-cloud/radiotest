@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.7.2";
+const WERSJA = "web 1.8";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -629,7 +629,7 @@ function nasluchStart() {
   if (R.dziala) return;
   rmfGraf();
   zaladujYamnet();
-  R.dziala = true; R.gen++; R.bloki.clear(); R.ostWerdykt = "?";
+  R.dziala = true; R.gen++; R.bloki.clear(); R.ostWerdykt = "?"; R.ostJestMowa = false;
   R.blok = new Float32Array(BLOK_S * 16000); R.wBloku = 0; R.nrBloku = 0; R.seriaMowa = null; R.seriaN = 0; R.werdykt = "?";
   R.ostatniBlok = Date.now();
   R.node.port.postMessage({ reset: true });
@@ -678,6 +678,7 @@ async function analizuj(x, nr, ramka, gen) {
   naBlok(b); rysujMowe();
 }
 function naBlok(b) {
+  R.ostJestMowa = b.jestMowa;
   R.bloki.set(b.nr, b);
   for (const k of R.bloki.keys()) if (k < b.nr - 15) R.bloki.delete(k);
   const pop = R.ostWerdykt; R.ostWerdykt = b.werdykt;
@@ -779,7 +780,7 @@ function logo(nazwa) {
 const loga = {}; const logoDla = (n) => loga[n] || (loga[n] = logo(n));
 
 // ---------- Tik co 5 s: tryb auto, głośność, zawieszenia ----------
-let ostCiecie = "";
+let ostCiecie = "", ostMowaLog = "";
 setInterval(() => {
   // ustawienia głośności na bieżąco
   if (gl && gl.s) { gl.ustawGlos(gl.s.id); if (!isNaN(gl.poziom)) pamiecGlos[gl.s.id] = gl.wzm; }
@@ -796,8 +797,11 @@ setInterval(() => {
     dodajLog("Nasłuch RMF24 zawieszony od 60 s, uruchamiam ponownie"); przerwijRmf(); nasluchStop(); nasluchStart();
   }
   const d = new Date(), min = d.getMinutes(), klucz = `${d.getDate()}-${d.getHours()}-${min}`;
-  if ((min === 28 || min === 58) && ostCiecie !== klucz && R.dziala && !R.tryb) {
-    ostCiecie = klucz; dodajLog(`Godzina x:${min} – nowy nasłuch RMF24`); nasluchStop(); nasluchStart();
+  if ((min === 28 || min === 58) && ostCiecie !== klucz && R.dziala) {
+    // jak w skrypcie: gdy trwa mowa, nasłuch nie startuje od nowa (sprawdzane co 5 s do końca tej minuty)
+    if (R.tryb || R.werdykt === "MOWA" || R.ostJestMowa) {
+      if (ostMowaLog !== klucz) { ostMowaLog = klucz; dodajLog(`x:${min} – trwa mowa, nasłuch bez restartu`); }
+    } else { ostCiecie = klucz; dodajLog(`Godzina x:${min} – nowy nasłuch RMF24`); nasluchStop(); nasluchStart(); }
   }
   if (!U.los.aktywne || !U.trybAuto) return;
   if (R.tryb && U.wzgledny) return;
