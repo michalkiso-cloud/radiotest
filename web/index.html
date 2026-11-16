@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.7";
+const WERSJA = "web 1.7.1";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -1064,6 +1064,9 @@ async function listaWyjsc() {
 async function sluchawkiStart() {
   if (!U.pauzaSluchawki || !navigator.mediaDevices) return;
   try { wyjscia = await listaWyjsc(); } catch (e) {}
+  const bezNazw = wyjscia && [...wyjscia.values()].every(n => !n);
+  if (bezNazw) { dodajLog("Pauza po odłączeniu słuchawek: brak zgody na odczyt urządzeń – zaznacz opcję ponownie"); status("Brak zgody dla opcji „Pauza po odłączeniu słuchawek” – zaznacz ją ponownie."); U.pauzaSluchawki = false; zapisz(false); rysuj(); }
+  else if (wyjscia) dodajLog("Pauza po odłączeniu słuchawek: aktywna (" + [...wyjscia.values()].filter(n => n && !/^(Domyślne|Default|Komunikacja|Communications)/i.test(n)).join(", ") + ")");
 }
 async function zgodaUrzadzenia() {
   try { const st = await navigator.mediaDevices.getUserMedia({ audio: true }); st.getTracks().forEach(t => t.stop()); return true; }
