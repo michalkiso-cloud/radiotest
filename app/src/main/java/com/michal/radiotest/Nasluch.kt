@@ -109,6 +109,8 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
     private var wBloku = 0
     private var startBloku = 0L
     private var nrBloku = 0
+    /** Generacja nasłuchu: rośnie przy każdym starcie i stopie, bloki ze starej generacji są pomijane. */
+    @Volatile private var generacja = 0
     private var ramkaBloku = 0L
 
     // bufor RMF24 w oryginalnej jakości (do odtwarzania z opóźnieniem)
@@ -184,6 +186,7 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
     fun stop() {
         val p = player ?: return
         player = null
+        generacja++
         glowny.removeCallbacksAndMessages(null)
         p.release()
         LogMowy.aktywny.value = false
@@ -197,6 +200,7 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
     }
 
     private fun resetuj() {
+        generacja++
         wBloku = 0; nWe = 0; nWy = 0; nrBloku = 0
         synchronized(zamek) { ramkiZapisane = 0 }
         startBloku = System.currentTimeMillis()
@@ -258,7 +262,8 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
             val nr = nrBloku++
             blok = FloatArray(BLOK_S * SR)
             wBloku = 0
-            analiza.post { analizuj(gotowy, start, nr, ramka) }
+            val gen = generacja
+            analiza.post { if (gen == generacja) analizuj(gotowy, start, nr, ramka, gen) }
         }
     }
 
@@ -288,7 +293,7 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
         }
     }
 
-    private fun analizuj(x: FloatArray, start: Long, nr: Int, ramka: Long) {
+    private fun analizuj(x: FloatArray, start: Long, nr: Int, ramka: Long, gen: Int) {
         val m = model ?: return
         val n = dlRamki
         val wej = ByteBuffer.allocateDirect(n * 4).order(ByteOrder.nativeOrder())
@@ -325,6 +330,7 @@ class Nasluch(private val ctx: Context, private val naBlok: (Blok) -> Unit) {
         val b = Blok(nr, start, sm, smu, pierw, ost, w, jestMowa, seriaStart, seriaN, ramka,
             x.size / SR.toFloat())
         glowny.post {
+            if (gen != generacja) return@post   // blok sprzed restartu nasłuchu
             LogMowy.werdykt.value = w
             ostatniBlokMs = System.currentTimeMillis()
             naBlok(b)
