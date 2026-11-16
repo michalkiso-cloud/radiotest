@@ -479,6 +479,7 @@ class RadioService : MediaLibraryService() {
     private var grałoOk = false
     private var zacieOd = 0L
     private var ostCiecie = ""
+    private var ostMowaLog = ""
 
     /** Po przejęciu dźwięku przez inną aplikację (np. dźwięk powiadomienia) wznawia, gdy ona skończy. */
     private var probyFokus = 0
@@ -688,7 +689,15 @@ class RadioService : MediaLibraryService() {
             val kal = java.util.Calendar.getInstance()
             val min = kal.get(java.util.Calendar.MINUTE)
             val klucz = "${kal.get(java.util.Calendar.DAY_OF_YEAR)}-${kal.get(java.util.Calendar.HOUR_OF_DAY)}-$min"
-            if ((min == 28 || min == 58) && ostCiecie != klucz && nasluch.dziala && !trybRmf && player.isPlaying) {
+            // jak w skrypcie: gdy trwa mowa (RMF24 gra albo nasłuch właśnie słyszy mowę), bez restartu
+            val ostBlok = bloki.keys.maxOrNull()?.let { bloki[it] }
+            val trwaMowa = trybRmf || ostatniWerdykt == "MOWA" || ostBlok?.jestMowa == true
+            if ((min == 28 || min == 58) && ostCiecie != klucz && nasluch.dziala && player.isPlaying && trwaMowa &&
+                ostMowaLog != klucz) {
+                ostMowaLog = klucz
+                LogMowy.dodaj(String.format(Locale.US, "x:%02d – trwa mowa, nasłuch bez restartu", min))
+            }
+            if ((min == 28 || min == 58) && ostCiecie != klucz && nasluch.dziala && !trwaMowa && player.isPlaying) {
                 ostCiecie = klucz
                 LogMowy.dodaj(String.format(Locale.US, "Godzina x:%02d – nowy nasłuch RMF24", min))
                 nasluch.stop()
