@@ -17,13 +17,18 @@ importScripts("/f/mediapipe-audio.js");   // MediaPipe tasks-audio 0.10.14 (Apac
     await gotowy;
     const { id, x } = e.data;
     if (!klas) { postMessage({ id, blad }); return; }
+    const t0 = performance.now();
+    // cały blok naraz: MediaPipe dzieli go na okna 0,975 s (bez nakładania) – dużo szybciej niż okno po oknie
+    const wyn = klas.classify(x, 16000) || [];
     const okna = [];
-    for (let st = 0; st + OKNO <= x.length; st += OKNO / 2) {
-      const kat = klas.classify(x.subarray(st, st + OKNO), 16000)?.[0]?.classifications?.[0]?.categories || [];
+    for (const r of wyn) {
+      const kat = r?.classifications?.[0]?.categories || [];
       let mowa = 0, muz = 0;
       for (const c of kat) { if (c.index === IDX_MOWA) mowa = c.score; else if (c.index === IDX_MUZYKA) muz = c.score; }
-      okna.push([st, mowa, muz]);
+      const st = Math.round((r.timestampMs || 0) * 16);
+      if (st + OKNO <= x.length + 160) okna.push([st, mowa, muz]);
     }
-    postMessage({ id, okna });
+    const ms = Math.round(performance.now() - t0);
+    postMessage({ id, okna, ms });
   };
 })();

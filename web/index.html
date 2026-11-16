@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.6.1";
+const WERSJA = "web 1.7";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -603,7 +603,7 @@ function klasyfikuj(x) { zaladujYamnet(); const id = nrZad++; return new Promise
 
 const R = { el: null, str: null, node: null, wyr: null, gain: null, dziala: false, zapisane: 0, poz: 0, sr: 48000,
   blok: null, wBloku: 0, ramkaBloku: 0, startBloku: 0, nrBloku: 0, seriaMowa: null, seriaN: 0, seriaStart: 0, werdykt: "?",
-  bloki: new Map(), ostWerdykt: "?", tryb: false, ostatniBlok: 0, poziom: NaN, wzm: 0, kolejka: Promise.resolve() };
+  bloki: new Map(), gen: 0, oczekuje: 0, ostWerdykt: "?", tryb: false, ostatniBlok: 0, poziom: NaN, wzm: 0, kolejka: Promise.resolve() };
 
 function rmfGraf() {
   if (R.el) return;
@@ -629,7 +629,7 @@ function nasluchStart() {
   if (R.dziala) return;
   rmfGraf();
   zaladujYamnet();
-  R.dziala = true; R.bloki.clear(); R.ostWerdykt = "?";
+  R.dziala = true; R.gen++; R.bloki.clear(); R.ostWerdykt = "?";
   R.blok = new Float32Array(BLOK_S * 16000); R.wBloku = 0; R.nrBloku = 0; R.seriaMowa = null; R.seriaN = 0; R.werdykt = "?";
   R.ostatniBlok = Date.now();
   R.node.port.postMessage({ reset: true });
@@ -638,7 +638,7 @@ function nasluchStart() {
 }
 function nasluchStop() {
   if (!R.dziala) return;
-  R.dziala = false; R.str.stop(); R.werdykt = "?";
+  R.dziala = false; R.gen++; R.str.stop(); R.werdykt = "?";
   dodajLog("Nasłuch RMF24: stop"); rysujMowe();
 }
 function przyjmij(pcm, ramka) {
@@ -651,14 +651,18 @@ function przyjmij(pcm, ramka) {
     if (R.wBloku === R.blok.length) {
       const x = R.blok, nr = R.nrBloku++, rs = R.ramkaBloku;
       R.blok = new Float32Array(BLOK_S * 16000); R.wBloku = 0;
-      R.kolejka = R.kolejka.then(() => analizuj(x, nr, rs));
+      const gen = R.gen; R.oczekuje++;
+      R.kolejka = R.kolejka.then(() => analizuj(x, nr, rs, gen)).finally(() => { R.oczekuje--; });
     }
   }
 }
-async function analizuj(x, nr, ramka) {
-  if (!R.dziala) return;
+async function analizuj(x, nr, ramka, gen) {
+  if (!R.dziala || gen !== R.gen) return;
+  // zaległość: gdy czekają nowsze bloki, ten pomijamy (lepiej ocenić świeży dźwięk niż stary)
+  if (R.oczekuje > 1) { dodajLog("Analiza nie nadąża – pomijam starszy blok"); return; }
   const w = await klasyfikuj(x);
-  if (!w.okna) return;
+  if (!w.okna || gen !== R.gen) return;
+  if (w.ms > 8000) dodajLog(`Uwaga: analiza bloku trwała ${(w.ms / 1000).toFixed(1)} s (komputer zajęty albo okno uśpione)`);
   const n = 15600; let sMowa = 0, sMuz = 0, ramki = 0, pierw = null, ost = null;
   for (const [st, mowa, muz] of w.okna) {
     sMowa += mowa; sMuz += muz; ramki++;
