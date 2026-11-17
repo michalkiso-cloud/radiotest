@@ -973,16 +973,37 @@ class RadioService : MediaLibraryService() {
         nasluchStart()
         // Spotify wraca do ostatniego utworu z naszej playlisty (po pauzie, stopie, nowym losowaniu,
         // zamknięciu aplikacji). Od losowego utworu tylko wtedy, gdy Spotify grało w międzyczasie coś innego.
+        // Tak samo jak strona: jeśli Spotify stoi w kontekście naszej playlisty (np. po graniu na komputerze),
+        // też kontynuujemy od bieżącego utworu.
         val ostatni = prefs.getString("spotify_utwor_uri", null)
-        if (ostatni == null) { startSpotifyLosowo(pl); return }
         naSpotify { r ->
-            r.playerApi.playerState.setResultCallback { st ->
-                if (!trybSpotify) return@setResultCallback
-                if (st.track?.uri == ostatni) {
-                    LogMowy.dodaj("Spotify: wracam do ostatniego utworu")
-                    wznowSpotify()
-                } else startSpotifyLosowo(pl)
-            }.setErrorCallback { if (trybSpotify) startSpotifyLosowo(pl) }
+            var rozstrzygniete = false
+            val sub = r.playerApi.subscribeToPlayerContext()
+            sub.setEventCallback { ctx ->
+                if (rozstrzygniete) return@setEventCallback
+                rozstrzygniete = true
+                runCatching { sub.cancel() }
+                if (!trybSpotify) return@setEventCallback
+                r.playerApi.playerState.setResultCallback { st ->
+                    if (!trybSpotify) return@setResultCallback
+                    val naszaPlaylista = ctx?.uri == pl.uri
+                    if (st.track != null && (naszaPlaylista || st.track.uri == ostatni)) {
+                        LogMowy.dodaj("Spotify: wracam do ostatniego utworu")
+                        wznowSpotify()
+                    } else startSpotifyLosowo(pl)
+                }.setErrorCallback { if (trybSpotify) startSpotifyLosowo(pl) }
+            }.setErrorCallback { if (!rozstrzygniete && trybSpotify) { rozstrzygniete = true; startSpotifyLosowo(pl) } }
+            // gdy kontekst nie przyjdzie w 3 s: decyzja po samym utworze
+            handler.postDelayed({
+                if (rozstrzygniete || !trybSpotify) return@postDelayed
+                rozstrzygniete = true
+                runCatching { sub.cancel() }
+                r.playerApi.playerState.setResultCallback { st ->
+                    if (!trybSpotify) return@setResultCallback
+                    if (st.track != null && st.track.uri == ostatni) { LogMowy.dodaj("Spotify: wracam do ostatniego utworu"); wznowSpotify() }
+                    else startSpotifyLosowo(pl)
+                }
+            }, 3000)
         }
     }
 
