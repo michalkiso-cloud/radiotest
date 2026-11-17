@@ -133,6 +133,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) {
             zgodaPowiadomienia.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        LogMowy.init(this); WifiAuta.zarejestruj(this)
         Synchro.start(this)
         Synchro.poPrzyjeciu = { if (!isFinishing) recreate() }
         kluczDi = prefs.getString("klucz_di", "") ?: ""
