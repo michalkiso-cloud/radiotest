@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.9";
+const WERSJA = "web 1.10";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -522,7 +522,7 @@ function spOdtwarzacz() {
     spPlayer.addListener("player_state_changed", (st) => {
       if (!st || !trybSp) return;
       const tr = st.track_window && st.track_window.current_track; if (!tr) return;
-      if (st.context && st.context.uri) { SP.ostatni = { kontekst: st.context.uri, uri: tr.uri, poz: st.position || 0 }; spZapisz(); }
+      if (st.context && st.context.uri) { SP.ostatni = { kontekst: st.context.uri, uri: tr.uri, poz: st.position || 0, nr: U.los.nr || 0 }; spZapisz(); }
       const t = tr.artists.map(a => a.name).join(", ") + " - " + tr.name;
       if (t !== icyTytul) { icyTytul = t; okladka = (tr.album.images.find(i => i.width >= 250) || tr.album.images[0] || {}).url || null; dodajLog("♪ " + t); rysujPanel(); }
     });
@@ -534,29 +534,26 @@ function spOdtwarzacz() {
   return spStart;
 }
 document.addEventListener("click", () => { if (spPlayer) spPlayer.activateElement(); }, true);
+// Nowe losowanie (nowy numer U.los.nr) = zawsze świeży losowy start i nowa kolejność.
+// Powrót do ostatniego utworu tylko w ramach tego samego losowania (pauza, stop, ręczny wybór), jak w telefonie 5.3.
 async function spGraj() {
   const pl = U.spotify; if (!pl) throw new Error("nie wybrano playlisty");
   await spOdtwarzacz();
-  const id = pl.uri.split(":").pop();
-  await spApi(`/me/player/shuffle?state=true&device_id=${spDev}`, { method: "PUT" }).catch(() => {});
-  // 1) to, na czym Spotify skończyło (także na telefonie), jeśli to ta sama playlista
-  try {
-    const st = await spApi("/me/player");
-    if (st && st.context && st.context.uri === pl.uri && st.item && st.item.uri) {
-      await spApi(`/me/player/play?device_id=${spDev}`, { method: "PUT", body: JSON.stringify({ context_uri: pl.uri, offset: { uri: st.item.uri }, position_ms: st.progress_ms || 0 }) });
-      dodajLog("Spotify: wznawiam od ostatniego utworu (" + st.item.name + ")"); return;
-    }
-  } catch (e) {}
-  // 2) ostatni utwór zapamiętany w tej przeglądarce
-  if (SP.ostatni && SP.ostatni.kontekst === pl.uri && SP.ostatni.uri) {
+  const id = pl.uri.split(":").pop(), nr = U.los.nr || 0;
+  const o = SP.ostatni;
+  if (o && o.kontekst === pl.uri && o.uri && o.nr === nr) {
     try {
-      await spApi(`/me/player/play?device_id=${spDev}`, { method: "PUT", body: JSON.stringify({ context_uri: pl.uri, offset: { uri: SP.ostatni.uri }, position_ms: SP.ostatni.poz || 0 }) });
-      dodajLog("Spotify: wznawiam od ostatniego utworu w przeglądarce"); return;
+      await spApi(`/me/player/shuffle?state=true&device_id=${spDev}`, { method: "PUT" }).catch(() => {});
+      await spApi(`/me/player/play?device_id=${spDev}`, { method: "PUT", body: JSON.stringify({ context_uri: pl.uri, offset: { uri: o.uri }, position_ms: o.poz || 0 }) });
+      dodajLog("Spotify: wznawiam od ostatniego utworu"); return;
     } catch (e) {}
   }
-  // 3) brak zapamiętanego miejsca: losowy utwór z playlisty
+  // świeży start: tasowanie wyłączone, losowy utwór, po 1,5 s tasowanie włączone (Spotify układa nową kolejność)
   let n = 0; try { n = (await spApi(`/playlists/${id}?fields=tracks.total`)).tracks.total; } catch (e) {}
+  await spApi(`/me/player/shuffle?state=false&device_id=${spDev}`, { method: "PUT" }).catch(() => {});
   await spApi(`/me/player/play?device_id=${spDev}`, { method: "PUT", body: JSON.stringify({ context_uri: pl.uri, ...(n > 1 ? { offset: { position: Math.floor(Math.random() * n) } } : {}) }) });
+  dodajLog("Spotify: nowy losowy start");
+  setTimeout(() => spApi(`/me/player/shuffle?state=true&device_id=${spDev}`, { method: "PUT" }).catch(() => {}), 1500);
 }
 const spPauza = () => { if (spPlayer) spPlayer.pause().catch(() => {}); };
 const spWznow = () => { if (spPlayer) spPlayer.resume().catch(() => {}); };
@@ -592,12 +589,12 @@ async function losuj() {
   if (U.trybAuto) {
     const b = U.los.autoId && wLosowaniu(U.los.autoId) ? stacja(U.los.autoId) : null;
     if (b && U.los.autoSek < U.autoMin * 60) s = b;
-    else { s = wylosuj(U.los.autoId); if (s) { U.los.autoId = s.id; U.los.autoSek = 0; } }
+    else { s = wylosuj(U.los.autoId); if (s) { U.los.autoId = s.id; U.los.autoSek = 0; U.los.nr = (U.los.nr || 0) + 1; } }
     if (s) U.los.autoKiedy = Date.now();
   } else {
     const b = U.los.dzienData === dzisiaj() && U.los.dzienId && wLosowaniu(U.los.dzienId) ? stacja(U.los.dzienId) : null;
     s = b || wylosuj(null);
-    if (!b && s) { U.los.dzienData = dzisiaj(); U.los.dzienId = s.id; }
+    if (!b && s) { U.los.dzienData = dzisiaj(); U.los.dzienId = s.id; U.los.nr = (U.los.nr || 0) + 1; }
   }
   zapisz();
   if (s) graj(s, true);
@@ -824,7 +821,7 @@ setInterval(() => {
   if (R.tryb && U.wzgledny) return;
   U.los.autoSek += TIK_S;
   if (U.los.autoSek >= U.autoMin * 60) {
-    const s = wylosuj(U.los.autoId); U.los.autoSek = 0; U.los.autoId = s ? s.id : null; zapiszAuto();
+    const s = wylosuj(U.los.autoId); U.los.autoSek = 0; U.los.autoId = s ? s.id : null; U.los.nr = (U.los.nr || 0) + 1; zapiszAuto();
     dodajLog("Auto: minął czas, zmiana stacji na " + (s ? s.nazwa : "(brak)"));
     if (s) graj(s, true);
   } else { if (U.los.autoSek % 300 < TIK_S) zapiszAuto(); else zapisz(false); rysujPanel(); }
