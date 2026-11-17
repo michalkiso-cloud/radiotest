@@ -971,15 +971,23 @@ class RadioService : MediaLibraryService() {
         player.prepare()
         player.play()
         nasluchStart()
-        // ta sama stacja z tego samego losowania (po pauzie, stopie, zamknięciu aplikacji):
-        // Spotify gra dalej od miejsca, w którym stanęło
-        val zLosu = StanLosowania.losujeTeraz(this)
-        if (zLosu && prefs.getInt("spotify_los_nr", -1) == nrLosu()) {
-            LogMowy.dodaj("Spotify: wznawiam (to samo losowanie)")
-            wznowSpotify()
-            return
+        // Spotify wraca do ostatniego utworu z naszej playlisty (po pauzie, stopie, nowym losowaniu,
+        // zamknięciu aplikacji). Od losowego utworu tylko wtedy, gdy Spotify grało w międzyczasie coś innego.
+        val ostatni = prefs.getString("spotify_utwor_uri", null)
+        if (ostatni == null) { startSpotifyLosowo(pl); return }
+        naSpotify { r ->
+            r.playerApi.playerState.setResultCallback { st ->
+                if (!trybSpotify) return@setResultCallback
+                if (st.track?.uri == ostatni) {
+                    LogMowy.dodaj("Spotify: wracam do ostatniego utworu")
+                    wznowSpotify()
+                } else startSpotifyLosowo(pl)
+            }.setErrorCallback { if (trybSpotify) startSpotifyLosowo(pl) }
         }
-        prefs.edit().putInt("spotify_los_nr", if (zLosu) nrLosu() else -1).apply()
+    }
+
+    /** Start playlisty od losowego utworu (pierwszy raz albo gdy Spotify grało coś innego). */
+    private fun startSpotifyLosowo(pl: Playlista) {
         val token = SpotifyUst.token(this)
         if (token == null) startSpotify(pl.uri, pl.utwory)
         else Thread {
@@ -1036,6 +1044,7 @@ class RadioService : MediaLibraryService() {
                         handler.postDelayed(sprawdzPauzeSpotify, 3000)
                     }
                     val t = st.track ?: return@setEventCallback
+                    if (trybSpotify && !st.isPaused && t.uri != null) prefs.edit().putString("spotify_utwor_uri", t.uri).apply()
                     val tytul = "${t.artist?.name ?: ""} – ${t.name ?: ""}"
                     if (tytul != spotifyUtwor && trybSpotify) {
                         spotifyUtwor = tytul

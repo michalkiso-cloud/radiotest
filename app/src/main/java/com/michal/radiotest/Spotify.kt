@@ -28,8 +28,12 @@ object SpotifyUst {
         val uri = p(c).getString("uri", null) ?: return null
         return Playlista(uri, p(c).getString("nazwa", "") ?: "", p(c).getInt("utwory", 0))
     }
-    fun wybierz(c: Context, pl: Playlista) = p(c).edit().putString("uri", pl.uri)
-        .putString("nazwa", pl.nazwa).putInt("utwory", pl.utwory).apply()
+    fun wybierz(c: Context, pl: Playlista) {
+        // inna playlista: zapamiętany ostatni utwór przestaje obowiązywać
+        if (p(c).getString("uri", null) != pl.uri)
+            StanLosowania.prefs(c).edit().remove("spotify_utwor_uri").apply()
+        p(c).edit().putString("uri", pl.uri).putString("nazwa", pl.nazwa).putInt("utwory", pl.utwory).apply()
+    }
 
     fun zapiszLiczbe(c: Context, n: Int) = p(c).edit().putInt("utwory", n).apply()
 
