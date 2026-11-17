@@ -553,7 +553,15 @@ class MainActivity : ComponentActivity() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(checked = wznowAuto, onCheckedChange = { wznowAuto = it; prefs.edit().putBoolean("wznow_auto", it).apply() })
-                Text("Wznów po połączeniu z Android Auto (wyłącz wtedy autostart muzyki w Android Auto)", fontSize = 14.sp)
+                Text("Wznów po połączeniu z Android Auto", fontSize = 14.sp)
+            }
+            var startWifi by remember { mutableStateOf(WifiAuta.wlaczone(this@MainActivity)) }
+            Row(
+                Modifier.fillMaxWidth().clickable { startWifi = !startWifi; WifiAuta.ustaw(this@MainActivity, startWifi) },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = startWifi, onCheckedChange = { startWifi = it; WifiAuta.ustaw(this@MainActivity, it) })
+                Text("Graj po połączeniu z Wi-Fi auta (192.168.43.x, jak w skrypcie)", fontSize = 14.sp)
             }
             Opcja("Losowanie raz dziennie", !trybAuto) { ustawTryb(false) }
             Opcja("Losowanie co X minut", trybAuto) { ustawTryb(true) }

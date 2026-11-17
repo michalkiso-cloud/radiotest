@@ -58,7 +58,23 @@ object LogMowy {
     /** true, gdy zamiast radia głównego gra RMF24 (mowa) */
     val graRmf = mutableStateOf(false)
     private val glowny = Handler(Looper.getMainLooper())
-    private val fmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    private val fmt = SimpleDateFormat("dd.MM HH:mm:ss", Locale.getDefault())
+
+    // log zapisywany w pliku: przetrwa uśpienie i zamknięcie aplikacji (diagnoza wejścia do auta)
+    private var plik: java.io.File? = null
+    private val zapis = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /** Wczytanie zapisanego logu (wielokrotne wywołanie nic nie psuje). */
+    @Synchronized fun init(c: android.content.Context) {
+        if (plik != null) return
+        val f = java.io.File(c.filesDir, "log.txt")
+        plik = f
+        val stare = runCatching { f.readLines() }.getOrDefault(emptyList()).takeLast(300)
+        glowny.post {
+            if (wpisy.isEmpty()) wpisy.addAll(stare.reversed())
+        }
+        if (stare.isNotEmpty()) dodaj("—— aplikacja uruchomiona ponownie ——")
+    }
 
     fun dodaj(tekst: String) {
         val linia = fmt.format(Date()) + " " + tekst
@@ -66,6 +82,13 @@ object LogMowy {
         glowny.post {
             wpisy.add(0, linia)
             while (wpisy.size > 300) wpisy.removeAt(wpisy.size - 1)
+        }
+        val f = plik ?: return
+        zapis.execute {
+            runCatching {
+                f.appendText(linia + "\n")
+                if (f.length() > 200_000) f.writeText(f.readLines().takeLast(300).joinToString("\n", postfix = "\n"))
+            }
         }
     }
 }

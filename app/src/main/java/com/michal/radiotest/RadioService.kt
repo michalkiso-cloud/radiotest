@@ -499,7 +499,14 @@ class RadioService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        LogMowy.init(this)
         LogMowy.dodaj("Usługa radia: start")
+        WifiAuta.zarejestruj(this)
+        runCatching {
+            getSystemService(android.net.ConnectivityManager::class.java).registerNetworkCallback(
+                android.net.NetworkRequest.Builder().addTransportType(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+                    .removeCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), diagWifi, handler)
+        }
         Synchro.start(this)
         player = nowyPlayer(true)
         player.addListener(sluchacz)
@@ -1123,21 +1130,43 @@ class RadioService : MediaLibraryService() {
     private val obserwatorAuta = androidx.lifecycle.Observer<Int> { typ ->
         val bylo = bylePolaczenieAuta
         bylePolaczenieAuta = typ
-        if (bylo != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED &&
-            typ == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED)
-            pauzaPoWyjsciu("rozłączone Android Auto")
-        // opcja „Wznów po połączeniu z Android Auto”: wznawiamy to, co zapauzowało wyjście z auta
+        LogMowy.dodaj("Diag: Android Auto ${nazwaAuta(bylo)} → ${nazwaAuta(typ)}, gra=${player.playWhenReady}, stacja=${obecna?.nazwa ?: "-"}")
         if (bylo == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED &&
             typ != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED) {
             val u = getSharedPreferences("ustawienia", MODE_PRIVATE)
+            LogMowy.dodaj("Diag: wznowienie AA – opcja=${u.getBoolean("wznow_auto", false)}, pauza przy wyjściu=${u.getBoolean("pauza_auta", false)}")
             if (u.getBoolean("wznow_auto", false) && u.getBoolean("pauza_auta", false)) {
                 handler.postDelayed({
-                    if (player.playWhenReady) return@postDelayed
+                    if (player.playWhenReady) { LogMowy.dodaj("Diag: po 3 s już gra, nic nie robię"); return@postDelayed }
                     LogMowy.dodaj("Połączono z Android Auto: wznawiam")
                     if (player.mediaItemCount > 0 && obecna != null) player.play() else losujZeSchowkiem()
                 }, 3000)
             }
         }
+        if (bylo != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED &&
+            typ == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED)
+            pauzaPoWyjsciu("rozłączone Android Auto")
+    }
+        }
+    }
+
+    private fun nazwaAuta(t: Int) = when (t) {
+        androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED -> "brak"
+        androidx.car.app.connection.CarConnection.CONNECTION_TYPE_PROJECTION -> "połączone"
+        androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NATIVE -> "natywne"
+        else -> "typ $t"
+    }
+
+    /** Diagnoza: każda sieć Wi-Fi (także bez internetu) z adresem. */
+    private val diagWifi = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: android.net.Network) {
+            handler.postDelayed({
+                val lp = runCatching { getSystemService(android.net.ConnectivityManager::class.java).getLinkProperties(network) }.getOrNull()
+                val adr = lp?.linkAddresses?.mapNotNull { it.address.hostAddress }?.filter { !it.contains(':') }?.joinToString() ?: "?"
+                LogMowy.dodaj("Diag: Wi-Fi połączone, adres $adr")
+            }, 1500)
+        }
+        override fun onLost(network: android.net.Network) { handler.post { LogMowy.dodaj("Diag: Wi-Fi rozłączone") } }
     }
 
     private val zewnetrzne = setOf(
@@ -1147,7 +1176,15 @@ class RadioService : MediaLibraryService() {
         android.media.AudioDeviceInfo.TYPE_BUS, android.media.AudioDeviceInfo.TYPE_BLE_HEADSET,
         android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER)
     private val urzadzenia = object : android.media.AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>) {
+            added.filter { it.isSink && it.type in zewnetrzne }.forEach {
+                LogMowy.dodaj("Diag: podłączone wyjście dźwięku ${it.productName} (typ ${it.type})")
+            }
+        }
         override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>) {
+            removed.filter { it.isSink && it.type in zewnetrzne }.forEach {
+                LogMowy.dodaj("Diag: odłączone wyjście dźwięku ${it.productName} (typ ${it.type})")
+            }
             if (removed.none { it.isSink && it.type in zewnetrzne }) return
             val am = getSystemService(AudioManager::class.java)
             val zostaly = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { it.type in zewnetrzne }
@@ -1203,6 +1240,8 @@ class RadioService : MediaLibraryService() {
         if (StanLosowania.losujeTeraz(this)) Synchro.wyslijAuto()
         handler.removeCallbacksAndMessages(null)
         runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(siec) }
+        runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(diagWifi) }
+        LogMowy.dodaj("Usługa radia: koniec")
         runCatching { auto.type.removeObserver(obserwatorAuta) }
         runCatching { getSystemService(AudioManager::class.java).unregisterAudioDeviceCallback(urzadzenia) }
         if (trybSpotify) zakonczSpotify()
