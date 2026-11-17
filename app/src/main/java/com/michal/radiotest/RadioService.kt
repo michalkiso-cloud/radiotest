@@ -1140,8 +1140,6 @@ class RadioService : MediaLibraryService() {
             typ == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED)
             pauzaPoWyjsciu("rozłączone Android Auto")
     }
-        }
-    }
 
     private fun nazwaAuta(t: Int) = when (t) {
         androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED -> "brak"
