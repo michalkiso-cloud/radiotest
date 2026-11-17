@@ -978,39 +978,28 @@ class RadioService : MediaLibraryService() {
         player.prepare()
         player.play()
         nasluchStart()
-        // Spotify wraca do ostatniego utworu z naszej playlisty (po pauzie, stopie, nowym losowaniu,
-        // zamknięciu aplikacji). Od losowego utworu tylko wtedy, gdy Spotify grało w międzyczasie coś innego.
-        // Tak samo jak strona: jeśli Spotify stoi w kontekście naszej playlisty (np. po graniu na komputerze),
-        // też kontynuujemy od bieżącego utworu.
+        // Nowe losowanie → świeży losowy start z nowym tasowaniem.
+        // Pauza, stop, zamknięcie aplikacji, ręczny wybór (to samo losowanie) → powrót do ostatniego utworu,
+        // o ile Spotify nadal na nim stoi (inaczej też świeży start).
+        val zLosu = StanLosowania.losujeTeraz(this)
+        val noweLosowanie = zLosu && prefs.getInt("spotify_los_nr", -1) != nrLosu()
+        if (zLosu) prefs.edit().putInt("spotify_los_nr", nrLosu()).apply()
         val ostatni = prefs.getString("spotify_utwor_uri", null)
+        if (noweLosowanie || ostatni == null) {
+            if (noweLosowanie) LogMowy.dodaj("Spotify: nowe losowanie, losowy start")
+            startSpotifyLosowo(pl); return
+        }
         naSpotify { r ->
-            var rozstrzygniete = false
-            val sub = r.playerApi.subscribeToPlayerContext()
-            sub.setEventCallback { ctx ->
-                if (rozstrzygniete) return@setEventCallback
-                rozstrzygniete = true
-                runCatching { sub.cancel() }
-                if (!trybSpotify) return@setEventCallback
-                r.playerApi.playerState.setResultCallback { st ->
-                    if (!trybSpotify) return@setResultCallback
-                    val naszaPlaylista = ctx?.uri == pl.uri
-                    if (st.track != null && (naszaPlaylista || st.track.uri == ostatni)) {
-                        LogMowy.dodaj("Spotify: wracam do ostatniego utworu")
-                        wznowSpotify()
-                    } else startSpotifyLosowo(pl)
-                }.setErrorCallback { if (trybSpotify) startSpotifyLosowo(pl) }
-            }.setErrorCallback { if (!rozstrzygniete && trybSpotify) { rozstrzygniete = true; startSpotifyLosowo(pl) } }
-            // gdy kontekst nie przyjdzie w 3 s: decyzja po samym utworze
-            handler.postDelayed({
-                if (rozstrzygniete || !trybSpotify) return@postDelayed
-                rozstrzygniete = true
-                runCatching { sub.cancel() }
-                r.playerApi.playerState.setResultCallback { st ->
-                    if (!trybSpotify) return@setResultCallback
-                    if (st.track != null && st.track.uri == ostatni) { LogMowy.dodaj("Spotify: wracam do ostatniego utworu"); wznowSpotify() }
-                    else startSpotifyLosowo(pl)
+            r.playerApi.playerState.setResultCallback { st ->
+                if (!trybSpotify) return@setResultCallback
+                if (st.track != null && st.track.uri == ostatni) {
+                    LogMowy.dodaj("Spotify: wracam do ostatniego utworu")
+                    wznowSpotify()
+                } else {
+                    LogMowy.dodaj("Spotify: stoi na innym utworze, losowy start")
+                    startSpotifyLosowo(pl)
                 }
-            }, 3000)
+            }.setErrorCallback { if (trybSpotify) startSpotifyLosowo(pl) }
         }
     }
 
@@ -1032,10 +1021,14 @@ class RadioService : MediaLibraryService() {
     private fun startSpotify(uri: String, utwory: Int) {
         spotifyKomendaMs = System.currentTimeMillis(); spotifyPonowienia = 0
         naSpotify { r ->
-            r.playerApi.setShuffle(true).setResultCallback {
+            // tasowanie wyłączone → start od losowego indeksu → tasowanie włączone ponownie:
+            // Spotify układa wtedy nową kolejność (inaczej powtarza zapamiętaną kolejkę)
+            r.playerApi.setShuffle(false).setResultCallback {
+                val wlaczTasowanie = { handler.postDelayed({ if (trybSpotify) naSpotify { it.playerApi.setShuffle(true) } }, 1500); Unit }
                 if (utwory > 1) r.playerApi.skipToIndex(uri, los.nextInt(utwory))
-                    .setErrorCallback { r.playerApi.play(uri) }
-                else r.playerApi.play(uri)
+                    .setResultCallback { wlaczTasowanie() }
+                    .setErrorCallback { r.playerApi.play(uri).setResultCallback { wlaczTasowanie() } }
+                else r.playerApi.play(uri).setResultCallback { wlaczTasowanie() }
             }
         }
     }
