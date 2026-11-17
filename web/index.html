@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.8";
+const WERSJA = "web 1.9";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -522,6 +522,7 @@ function spOdtwarzacz() {
     spPlayer.addListener("player_state_changed", (st) => {
       if (!st || !trybSp) return;
       const tr = st.track_window && st.track_window.current_track; if (!tr) return;
+      if (st.context && st.context.uri) { SP.ostatni = { kontekst: st.context.uri, uri: tr.uri, poz: st.position || 0 }; spZapisz(); }
       const t = tr.artists.map(a => a.name).join(", ") + " - " + tr.name;
       if (t !== icyTytul) { icyTytul = t; okladka = (tr.album.images.find(i => i.width >= 250) || tr.album.images[0] || {}).url || null; dodajLog("♪ " + t); rysujPanel(); }
     });
@@ -537,8 +538,24 @@ async function spGraj() {
   const pl = U.spotify; if (!pl) throw new Error("nie wybrano playlisty");
   await spOdtwarzacz();
   const id = pl.uri.split(":").pop();
-  let n = 0; try { n = (await spApi(`/playlists/${id}?fields=tracks.total`)).tracks.total; } catch (e) {}
   await spApi(`/me/player/shuffle?state=true&device_id=${spDev}`, { method: "PUT" }).catch(() => {});
+  // 1) to, na czym Spotify skończyło (także na telefonie), jeśli to ta sama playlista
+  try {
+    const st = await spApi("/me/player");
+    if (st && st.context && st.context.uri === pl.uri && st.item && st.item.uri) {
+      await spApi(`/me/player/play?device_id=${spDev}`, { method: "PUT", body: JSON.stringify({ context_uri: pl.uri, offset: { uri: st.item.uri }, position_ms: st.progress_ms || 0 }) });
+      dodajLog("Spotify: wznawiam od ostatniego utworu (" + st.item.name + ")"); return;
+    }
+  } catch (e) {}
+  // 2) ostatni utwór zapamiętany w tej przeglądarce
+  if (SP.ostatni && SP.ostatni.kontekst === pl.uri && SP.ostatni.uri) {
+    try {
+      await spApi(`/me/player/play?device_id=${spDev}`, { method: "PUT", body: JSON.stringify({ context_uri: pl.uri, offset: { uri: SP.ostatni.uri }, position_ms: SP.ostatni.poz || 0 }) });
+      dodajLog("Spotify: wznawiam od ostatniego utworu w przeglądarce"); return;
+    } catch (e) {}
+  }
+  // 3) brak zapamiętanego miejsca: losowy utwór z playlisty
+  let n = 0; try { n = (await spApi(`/playlists/${id}?fields=tracks.total`)).tracks.total; } catch (e) {}
   await spApi(`/me/player/play?device_id=${spDev}`, { method: "PUT", body: JSON.stringify({ context_uri: pl.uri, ...(n > 1 ? { offset: { position: Math.floor(Math.random() * n) } } : {}) }) });
 }
 const spPauza = () => { if (spPlayer) spPlayer.pause().catch(() => {}); };
