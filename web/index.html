@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.10";
+const WERSJA = "web 1.11";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -392,7 +392,27 @@ async function graj(s, zLosowania = false) {
     if (stare && stare.gra) { rampa(stare.gain, stare.gain.gain.value, 0, czasP()); await czekaj(czasP() * 1000); if (nr !== nrGraj) return; }
     if (stare) stare.stop();
     gl = null; trybSp = true;
-    try { await spGraj(); } catch (e) { if (nr === nrGraj) { status("Spotify: " + e.message); dodajLog("Spotify: " + e.message); } return; }
+    try { await spGraj(); }
+    catch (e) {
+      if (nr !== nrGraj) return;
+      dodajLog("Spotify: " + e.message + " – łączę odtwarzacz od nowa i ponawiam");
+      // po wielu godzinach urządzenie „Radio (przeglądarka)” bywa nieaktualne: nowy odtwarzacz i druga próba
+      try { if (spPlayer) spPlayer.disconnect(); } catch (x) {}
+      spPlayer = null; spStart = null; spDev = null;
+      try { await spGraj(); }
+      catch (e2) {
+        if (nr !== nrGraj) return;
+        dodajLog("Spotify: " + e2.message);
+        trybSp = false;
+        const inna = U.los.aktywne ? wylosuj(s.id) : null;
+        if (inna && !inna.adres.startsWith("spotify:")) {
+          dodajLog("Spotify niedostępne → " + inna.nazwa);
+          if (U.trybAuto) { U.los.autoId = inna.id; zapiszAuto(); }
+          graj(inna, true);
+        } else status("Spotify: " + e2.message);
+        return;
+      }
+    }
     if (nr !== nrGraj) return;
     status("Gra.");
     if (U.mowa.wl) nasluchStart(); else nasluchStop();
@@ -497,7 +517,7 @@ async function spApi(sciezka, opcje = {}) {
   const r = await fetch("https://api.spotify.com/v1" + sciezka, { ...opcje, headers: { Authorization: "Bearer " + t, ...(opcje.body ? { "content-type": "application/json" } : {}) } });
   if (r.status === 204) return {};
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error((j.error && j.error.message) || "kod " + r.status);
+  if (!r.ok) { const e = new Error(((j.error && j.error.message) || "kod " + r.status) + ` (${r.status} ${sciezka.split("?")[0]})`); e.status = r.status; throw e; }
   return j;
 }
 function spSkrypt() {
