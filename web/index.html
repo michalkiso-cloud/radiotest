@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.11";
+const WERSJA = "web 1.12";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -556,9 +556,17 @@ function spOdtwarzacz() {
 document.addEventListener("click", () => { if (spPlayer) spPlayer.activateElement(); }, true);
 // Nowe losowanie (nowy numer U.los.nr) = zawsze świeży losowy start i nowa kolejność.
 // Powrót do ostatniego utworu tylko w ramach tego samego losowania (pauza, stop, ręczny wybór), jak w telefonie 5.3.
+/** Świeżo podłączone urządzenie Spotify bywa przez chwilę „nieznane” (404): przeniesienie odtwarzania z ponawianiem. */
+async function spPrzejmij() {
+  for (let i = 0; ; i++) {
+    try { await spApi("/me/player", { method: "PUT", body: JSON.stringify({ device_ids: [spDev], play: false }) }); return; }
+    catch (e) { if (e.status !== 404 || i >= 5) throw e; await czekaj(1000); }
+  }
+}
 async function spGraj() {
   const pl = U.spotify; if (!pl) throw new Error("nie wybrano playlisty");
   await spOdtwarzacz();
+  await spPrzejmij();
   const id = pl.uri.split(":").pop(), nr = U.los.nr || 0;
   const o = SP.ostatni;
   if (o && o.kontekst === pl.uri && o.uri && o.nr === nr) {
