@@ -13,7 +13,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import android.graphics.BitmapFactory
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -355,6 +357,7 @@ class MainActivity : ComponentActivity() {
 
     // ---------- Duży odtwarzacz ----------
 
+    @OptIn(ExperimentalFoundationApi::class)
     @Composable
     private fun DuzyOdtwarzacz() {
         val ciemny = MaterialTheme.colorScheme.background.red < 0.5f
@@ -374,12 +377,25 @@ class MainActivity : ComponentActivity() {
                 style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val rmfGra = LogMowy.graRmf.value
-            Text(if (rmfGra) "Teraz gra RMF24 (mowa)" else utwor.ifEmpty { " " },
-                fontSize = 18.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
-                color = if (rmfGra) (if (ciemny) Color(0xFF81C784) else Color(0xFF2E7D32))
-                    else if (ciemny) (if (paleta == 5) Color(0xFFF3C98B) else Color(0xFFFFEB3B)) else MaterialTheme.colorScheme.primary,
-                maxLines = 2, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp, bottom = 10.dp))
+            // wiersz 1 wykonawca, wiersz 2 tytuł; za długie przewijają się w poziomie
+            val kolor = if (rmfGra) (if (ciemny) Color(0xFF81C784) else Color(0xFF2E7D32))
+                else if (ciemny) (if (paleta == 5) Color(0xFFF3C98B) else Color(0xFFFFEB3B)) else MaterialTheme.colorScheme.primary
+            val (wykonawca, tytul) = when {
+                rmfGra -> "Teraz gra RMF24" to "(mowa)"
+                else -> {
+                    val sep = listOf(" - ", " – ", " — ").map { utwor.indexOf(it) }.filter { it > 0 }.minOrNull()
+                    if (sep == null) utwor to "" else utwor.substring(0, sep).trim() to utwor.substring(sep + 3).trim()
+                }
+            }
+            Column(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 10.dp)) {
+                listOf(wykonawca to FontWeight.Bold, tytul to FontWeight.Normal).forEach { (t, w) ->
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Text(t.ifEmpty { " " }, fontSize = 18.sp, fontWeight = w, color = kolor, maxLines = 1,
+                            modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1500,
+                                repeatDelayMillis = 2000))
+                    }
+                }
+            }
             // okładka ok. 3/4 szerokości ekranu (jak w zwykłych odtwarzaczach radia)
             Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (obraz != null) Image(obraz, contentDescription = "Okładka",
