@@ -386,7 +386,7 @@ class MainActivity : ComponentActivity() {
             }
             Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
                 Text(status + if (trybAuto && losujeTeraz && stacja.isNotEmpty()) "   Auto: $autoMin min z $autoLimit" else "",
-                    style = MaterialTheme.typography.bodySmall)
+                    fontSize = 13.sp, lineHeight = 17.sp)
                 Text("Głośność", fontSize = 15.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(top = 8.dp))
                 Text(StanGlosnosci.opis.value, fontSize = 13.sp, lineHeight = 17.sp)
