@@ -192,10 +192,13 @@ class MainActivity : ComponentActivity() {
             else Column(Modifier.padding(pad).fillMaxSize()) {
                 // u góry zakładki (albo log), na dole panel ze stacją i sterowaniem – pod kciukiem
                 if (!pokazLog) TabRow(selectedTabIndex = zakladka) {
-                    Tab(zakladka == 0, { zakladka = 0 }, text = { Text("Stacje") })
-                    Tab(zakladka == 1, { zakladka = 1 }, text = { Text("Losowanie") })
-                    Tab(zakladka == 2, { zakladka = 2 }, text = { Text("Mowa") })
-                    Tab(zakladka == 3, { zakladka = 3 }, text = { Text("Statystyki", maxLines = 1, softWrap = false) })
+                    // własna zawartość zakładki: bez domyślnych marginesów 16 dp, napisy w jednej linii
+                    listOf("Stacje", "Losowanie", "Mowa", "Statystyki").forEachIndexed { i, n ->
+                        Tab(zakladka == i, { zakladka = i }, Modifier.height(48.dp)) {
+                            Text(n, maxLines = 1, softWrap = false, fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 2.dp))
+                        }
+                    }
                 }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     if (pokazLog) EkranLogu()
