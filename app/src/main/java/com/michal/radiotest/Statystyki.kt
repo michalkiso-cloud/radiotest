@@ -20,6 +20,8 @@ object Statystyki {
         pr.edit().putLong(klucz, pr.getLong(klucz, 0) + ile).apply()
     }
 
+    fun resetuj(c: Context) = p(c).edit().clear().apply()
+
     fun czas(c: Context, nazwa: String, sek: Long) = dodaj(c, "t|${dzis()}|$nazwa", sek)
     fun losowanie(c: Context, nazwa: String) = dodaj(c, "l|${dzis()}|$nazwa", 1)
     fun rmf(c: Context) = dodaj(c, "r|${dzis()}", 1)

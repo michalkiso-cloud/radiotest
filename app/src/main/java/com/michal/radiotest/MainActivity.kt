@@ -415,7 +415,15 @@ class MainActivity : ComponentActivity() {
         var odswiez by remember { mutableIntStateOf(0) }
         LaunchedEffect(Unit) { while (true) { delay(15_000); odswiez++ } }
         val dni = listOf(1, 7, 30, null)[okres]
+        var pytanie by remember { mutableStateOf(false) }
         val z = remember(okres, odswiez) { Statystyki.zestaw(c, dni) }
+        if (pytanie) AlertDialog(
+            onDismissRequest = { pytanie = false },
+            title = { Text("Resetować statystyki?") },
+            text = { Text("Wszystkie zapisane dane (czas, losowania, wiadomości) zostaną usunięte.") },
+            confirmButton = { TextButton(onClick = { Statystyki.resetuj(c); pytanie = false; odswiez++ }) { Text("Resetuj") } },
+            dismissButton = { TextButton(onClick = { pytanie = false }) { Text("Anuluj") } }
+        )
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -429,7 +437,7 @@ class MainActivity : ComponentActivity() {
             Text("Przełączenia na wiadomości RMF24: ${z.rmf}   Losowania: ${z.losowania}",
                 style = MaterialTheme.typography.bodyMedium)
             HorizontalDivider()
-            if (z.wiersze.isEmpty()) Text("Brak danych w tym okresie. Czas liczy się od wersji 5.4.",
+            if (z.wiersze.isEmpty()) Text("Brak danych w tym okresie.",
                 style = MaterialTheme.typography.bodySmall)
             val maks = z.wiersze.maxOfOrNull { it.sek }?.coerceAtLeast(1) ?: 1
             z.wiersze.forEach { w ->
@@ -451,6 +459,9 @@ class MainActivity : ComponentActivity() {
             }
             Text("RMF24 (mowa) to czas, gdy zamiast stacji grały wiadomości. Spotify liczy się tylko, gdy faktycznie gra.",
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+            OutlinedButton(onClick = { pytanie = true }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Text("Resetuj statystyki")
+            }
         }
     }
 
