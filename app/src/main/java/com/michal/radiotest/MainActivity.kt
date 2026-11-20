@@ -381,17 +381,18 @@ class MainActivity : ComponentActivity() {
                 maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp, bottom = 10.dp))
             // okładka ok. 3/4 szerokości ekranu (jak w zwykłych odtwarzaczach radia)
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.weight(1f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (obraz != null) Image(obraz, contentDescription = "Okładka",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxWidth(0.77f).aspectRatio(1f)
+                    modifier = Modifier.fillMaxWidth(0.77f).weight(1f, fill = false).aspectRatio(1f, matchHeightConstraintsFirst = true)
                         .clip(RoundedCornerShape(18.dp)))
+                // stan pod okładką, czcionką jak „Głośność”
+                Text(status + if (trybAuto && losujeTeraz && stacja.isNotEmpty()) "   Auto: $autoMin min z $autoLimit" else "",
+                    fontSize = 15.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 12.dp))
             }
             Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
-                Text(status + if (trybAuto && losujeTeraz && stacja.isNotEmpty()) "   Auto: $autoMin min z $autoLimit" else "",
-                    fontSize = 13.sp, lineHeight = 17.sp)
-                Text("Głośność", fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 8.dp))
+                Text("Głośność", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 Text(StanGlosnosci.opis.value, fontSize = 13.sp, lineHeight = 17.sp)
                 HorizontalDivider(Modifier.padding(top = 12.dp, bottom = 10.dp))
                 Column(Modifier.fillMaxWidth().clickable { pokazLog = true }) {
