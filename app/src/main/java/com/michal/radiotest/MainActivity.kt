@@ -12,7 +12,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -106,6 +114,7 @@ class MainActivity : ComponentActivity() {
     private var utwor by mutableStateOf("")
     private var status by mutableStateOf("Wybierz stację.")
     private var graTeraz by mutableStateOf(false)
+    private var okladka by mutableStateOf<ByteArray?>(null)
     private var kluczDi by mutableStateOf("")
     private var bateriaOk by mutableStateOf(false)
     private var motyw by mutableIntStateOf(0)        // 0 system, 1 jasny, 2 ciemny
@@ -165,10 +174,12 @@ class MainActivity : ComponentActivity() {
     // ---------- Ekran główny ----------
 
     private var pokazLog by mutableStateOf(false)
+    private var pokazOdtwarzacz by mutableStateOf(false)
 
     @Composable
     private fun Ekran() {
         BackHandler(enabled = pokazLog) { pokazLog = false }
+        BackHandler(enabled = pokazOdtwarzacz && !pokazLog) { pokazOdtwarzacz = false }
         var zakladka by remember { mutableIntStateOf(0) }
         var edycja by remember { mutableStateOf<Stacja?>(null) }
         var nowa by remember { mutableStateOf(false) }
@@ -177,19 +188,22 @@ class MainActivity : ComponentActivity() {
         var doUsuniecia by remember { mutableStateOf<Stacja?>(null) }
 
         Scaffold { pad ->
-            Column(Modifier.padding(pad).fillMaxSize()) {
+            if (pokazOdtwarzacz && !pokazLog) Box(Modifier.padding(pad).fillMaxSize()) { DuzyOdtwarzacz() }
+            else Column(Modifier.padding(pad).fillMaxSize()) {
                 // u góry zakładki (albo log), na dole panel ze stacją i sterowaniem – pod kciukiem
                 if (!pokazLog) TabRow(selectedTabIndex = zakladka) {
                     Tab(zakladka == 0, { zakladka = 0 }, text = { Text("Stacje") })
                     Tab(zakladka == 1, { zakladka = 1 }, text = { Text("Losowanie") })
                     Tab(zakladka == 2, { zakladka = 2 }, text = { Text("Mowa") })
+                    Tab(zakladka == 3, { zakladka = 3 }, text = { Text("Statystyki", maxLines = 1, softWrap = false) })
                 }
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     if (pokazLog) EkranLogu()
                     else when (zakladka) {
                         0 -> ListaStacji(onEdytuj = { edycja = it }, onUsun = { doUsuniecia = it })
                         1 -> ZakladkaLosowania(onSzansa = { szansa = it }, onDodaj = { wybor = true })
-                        else -> ZakladkaMowy()
+                        2 -> ZakladkaMowy()
+                        else -> ZakladkaStatystyk()
                     }
                     if (zakladka == 0 && !pokazLog) FloatingActionButton(
                         onClick = { nowa = true },
@@ -265,7 +279,7 @@ class MainActivity : ComponentActivity() {
         val ciemny = MaterialTheme.colorScheme.background.red < 0.5f
         Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f).clickable(enabled = stacja.isNotEmpty()) { pokazOdtwarzacz = true }) {
                     Text(if (stacja.isEmpty()) "Nic nie gra" else stacja,
                         style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
                         fontWeight = FontWeight.Bold)
@@ -297,8 +311,14 @@ class MainActivity : ComponentActivity() {
                 Modifier.padding(end = 12.dp, top = 6.dp),
                 thickness = 2.dp, color = MaterialTheme.colorScheme.primary
             )
+            Kontrolki(Modifier.fillMaxWidth().padding(end = 12.dp, top = 6.dp))
+        }
+    }
+
+    @Composable
+    private fun Kontrolki(modifier: Modifier) {
             Column(
-                Modifier.fillMaxWidth().padding(end = 12.dp, top = 6.dp),
+                modifier,
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Button(onClick = { losuj() }, modifier = Modifier.fillMaxWidth()) {
@@ -328,6 +348,105 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+    }
+
+    // ---------- Duży odtwarzacz ----------
+
+    @Composable
+    private fun DuzyOdtwarzacz() {
+        val ciemny = MaterialTheme.colorScheme.background.red < 0.5f
+        val bajty = okladka
+        val obraz = remember(bajty, stacja) {
+            val b = bajty ?: if (stacja.isNotEmpty()) Okladki.logo(stacja) else null
+            b?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }.getOrNull() }
+        }
+        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { pokazOdtwarzacz = false }) { Text("⌄ Zwiń", fontSize = 16.sp) }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { pokazLog = true }) { Text("Log") }
+            }
+            Text(if (stacja.isEmpty()) "Nic nie gra" else stacja,
+                style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val rmfGra = LogMowy.graRmf.value
+            Text(if (rmfGra) "Teraz gra RMF24 (mowa)" else utwor.ifEmpty { " " },
+                fontSize = 18.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                color = if (rmfGra) (if (ciemny) Color(0xFF81C784) else Color(0xFF2E7D32))
+                    else if (ciemny) (if (paleta == 5) Color(0xFFF3C98B) else Color(0xFFFFEB3B)) else MaterialTheme.colorScheme.primary,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp, bottom = 10.dp))
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (obraz != null) Image(obraz, contentDescription = "Okładka",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.aspectRatio(1f, matchHeightConstraintsFirst = true)
+                        .clip(RoundedCornerShape(18.dp)))
+            }
+            Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                Text(status + if (trybAuto && losujeTeraz && stacja.isNotEmpty()) "   Auto: $autoMin min z $autoLimit" else "",
+                    style = MaterialTheme.typography.bodySmall)
+                Text("Głośność", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 6.dp))
+                Text(StanGlosnosci.opis.value, style = MaterialTheme.typography.bodySmall)
+                HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                Column(Modifier.fillMaxWidth().clickable { pokazLog = true }) {
+                    LogMowy.wpisy.take(5).forEach { w ->
+                        Text(w.substringAfter(' '), fontSize = 12.sp, lineHeight = 15.sp, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = if (w.contains("| mowa |")) Color(0xFF43A047) else Color.Unspecified)
+                    }
+                }
+            }
+            Kontrolki(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 8.dp))
+        }
+    }
+
+    // ---------- Zakładka 4: statystyki ----------
+
+    @Composable
+    private fun ZakladkaStatystyk() {
+        val c = this@MainActivity
+        var okres by remember { mutableIntStateOf(0) }
+        var odswiez by remember { mutableIntStateOf(0) }
+        LaunchedEffect(Unit) { while (true) { delay(15_000); odswiez++ } }
+        val dni = listOf(1, 7, 30, null)[okres]
+        val z = remember(okres, odswiez) { Statystyki.zestaw(c, dni) }
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("Dziś", "7 dni", "30 dni", "Wszystko").forEachIndexed { i, n ->
+                    Pigulka(n, wyrozniona = okres == i) { okres = i }
+                }
+            }
+            Text("Słuchane: ${Statystyki.czytelnie(z.razem)}" +
+                if (dni == null || dni > 1) " (dni: ${z.dniZDanymi})" else "",
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Przełączenia na wiadomości RMF24: ${z.rmf}   Losowania: ${z.losowania}",
+                style = MaterialTheme.typography.bodyMedium)
+            HorizontalDivider()
+            if (z.wiersze.isEmpty()) Text("Brak danych w tym okresie. Czas liczy się od wersji 5.4.",
+                style = MaterialTheme.typography.bodySmall)
+            val maks = z.wiersze.maxOfOrNull { it.sek }?.coerceAtLeast(1) ?: 1
+            z.wiersze.forEach { w ->
+                Column(Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(w.nazwa, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(Statystyki.czytelnie(w.sek) + if (z.razem > 0)
+                            String.format(Locale("pl"), "  %.0f%%", 100.0 * w.sek / z.razem) else "",
+                            style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Box(Modifier.fillMaxWidth().padding(top = 3.dp).height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.secondaryContainer)) {
+                        Box(Modifier.fillMaxWidth(w.sek.toFloat() / maks).fillMaxHeight()
+                            .background(MaterialTheme.colorScheme.primary))
+                    }
+                    if (w.losowania > 0) Text("Wylosowana: ${w.losowania}×", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Text("RMF24 (mowa) to czas, gdy zamiast stacji grały wiadomości. Spotify liczy się tylko, gdy faktycznie gra.",
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
         }
     }
 
@@ -835,6 +954,8 @@ class MainActivity : ComponentActivity() {
         stacja = if (p.mediaItemCount > 0 && p.playbackState != Player.STATE_IDLE)
             p.currentMediaItem?.mediaMetadata?.station?.toString() ?: "" else ""
         utwor = p.currentMediaItem?.mediaMetadata?.artist?.toString().orEmpty()
+        val ok = p.mediaMetadata.artworkData ?: p.currentMediaItem?.mediaMetadata?.artworkData
+        if (!(ok contentEquals okladka)) okladka = ok
         graTeraz = p.playWhenReady
         if (stacja.isNotEmpty()) status = when (p.playbackState) {
             Player.STATE_BUFFERING -> "Łączę..."

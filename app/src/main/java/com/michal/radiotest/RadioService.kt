@@ -104,6 +104,7 @@ class RadioService : MediaLibraryService() {
     /** Czas ostatniego naszego polecenia start/wznów dla Spotify i liczba ponowień po nagłym zatrzymaniu. */
     private var spotifyKomendaMs = 0L
     private var spotifyPonowienia = 0
+    private var spotifyPonowaMs = 0L
     /** Ostatni zgłoszony stan Spotify (do wpisów w logu tylko przy zmianie). */
     private var spotifyStanLog: Boolean? = null
     private val ponowSpotify = Runnable {
@@ -156,6 +157,7 @@ class RadioService : MediaLibraryService() {
             break
         }
         trybRmf = true
+        Statystyki.rmf(this)
         powrotUstawiony = false
         LogMowy.graRmf.value = true
         odswiezOpis()
@@ -662,13 +664,14 @@ class RadioService : MediaLibraryService() {
             val id = prefs.getString("auto_id", null)
             val biezaca = id?.takeIf { m.wLosowaniu(it) }?.let { m.stacja(it) }
             if (biezaca != null && StanLosowania.autoSek(this) < StanLosowania.autoMin(this) * 60) biezaca
-            else wylosuj(m, id)?.also { e.putString("auto_id", it.id).putInt("auto_sek", 0).putInt("los_nr", nrLosu() + 1) }
+            else wylosuj(m, id)?.also { Statystyki.losowanie(this, it.nazwa); e.putString("auto_id", it.id).putInt("auto_sek", 0).putInt("los_nr", nrLosu() + 1) }
         } else {
             val dzis = LocalDate.now().toString()
             val id = prefs.getString("dzien_id", null)
             val biezaca = id?.takeIf { prefs.getString("dzien_data", "") == dzis && m.wLosowaniu(it) }
                 ?.let { m.stacja(it) }
             biezaca ?: wylosuj(m, null)?.also {
+                Statystyki.losowanie(this, it.nazwa)
                 e.putString("dzien_data", dzis).putString("dzien_id", it.id).putInt("los_nr", nrLosu() + 1)
             }
         }
@@ -684,6 +687,11 @@ class RadioService : MediaLibraryService() {
             pilnujRozmowy()
             sprawdzZawieszenie()
             odswiezGlosnosc()
+            // statystyki: czas grania stacji (RMF24 w czasie mowy osobno, Spotify tylko gdy faktycznie gra)
+            obecna?.let { s ->
+                if (player.isPlaying && !(trybSpotify && spotifyPauza && !trybRmf))
+                    Statystyki.czas(this@RadioService, if (trybRmf) Statystyki.RMF else s.nazwa, TIK_S.toLong())
+            }
             // nasłuch RMF24 bez nowego bloku przez 60 s (np. zawieszony po utracie sieci): restart
             if (nasluch.dziala && player.isPlaying &&
                 System.currentTimeMillis() - nasluch.ostatniBlokMs > 60_000) {
@@ -721,6 +729,7 @@ class RadioService : MediaLibraryService() {
                 val nowa = wylosuj(m, prefs.getString("auto_id", null))
                 prefs.edit().putInt("auto_sek", 0).putString("auto_id", nowa?.id).putInt("los_nr", nrLosu() + 1).apply()
                 LogMowy.dodaj("Auto: minął czas, zmiana stacji na ${nowa?.nazwa ?: "(brak)"}")
+                nowa?.let { Statystyki.losowanie(this@RadioService, it.nazwa) }
                 nowa?.let { graj(it) }
                 Synchro.wyslijAuto()
             } else {
@@ -1053,7 +1062,9 @@ class RadioService : MediaLibraryService() {
                     }
                     if (!st.isPaused) { spotifyGralo = true; handler.removeCallbacks(sprawdzPauzeSpotify) }
                     else if (trybSpotify && !trybRmf && player.playWhenReady &&
-                        System.currentTimeMillis() - spotifyKomendaMs < 20_000 && spotifyPonowienia < 3) {
+                        System.currentTimeMillis() - spotifyKomendaMs < 20_000 && spotifyPonowienia < 3 &&
+                        System.currentTimeMillis() - spotifyPonowaMs > 4_000) {
+                        spotifyPonowaMs = System.currentTimeMillis()
                         // zatrzymane zaraz po naszym starcie (np. Android Auto przełącza widok na Spotify): wznawiamy
                         spotifyPonowienia++
                         LogMowy.dodaj("Spotify stanęło zaraz po starcie, wznawiam ($spotifyPonowienia/3)")
