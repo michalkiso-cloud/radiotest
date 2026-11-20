@@ -377,19 +377,20 @@ class MainActivity : ComponentActivity() {
                     else if (ciemny) (if (paleta == 5) Color(0xFFF3C98B) else Color(0xFFFFEB3B)) else MaterialTheme.colorScheme.primary,
                 maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp, bottom = 10.dp))
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            // okładka ok. 3/4 szerokości ekranu (jak w zwykłych odtwarzaczach radia)
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 if (obraz != null) Image(obraz, contentDescription = "Okładka",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.aspectRatio(1f, matchHeightConstraintsFirst = true)
+                    modifier = Modifier.fillMaxWidth(0.77f).aspectRatio(1f)
                         .clip(RoundedCornerShape(18.dp)))
             }
             Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
                 Text(status + if (trybAuto && losujeTeraz && stacja.isNotEmpty()) "   Auto: $autoMin min z $autoLimit" else "",
                     style = MaterialTheme.typography.bodySmall)
-                Text("Głośność", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 6.dp))
-                Text(StanGlosnosci.opis.value, style = MaterialTheme.typography.bodySmall)
-                HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                Text("Głośność", fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 8.dp))
+                Text(StanGlosnosci.opis.value, fontSize = 13.sp, lineHeight = 17.sp)
+                HorizontalDivider(Modifier.padding(top = 12.dp, bottom = 10.dp))
                 Column(Modifier.fillMaxWidth().clickable { pokazLog = true }) {
                     LogMowy.wpisy.take(5).forEach { w ->
                         Text(w.substringAfter(' '), fontSize = 12.sp, lineHeight = 15.sp, maxLines = 1,
