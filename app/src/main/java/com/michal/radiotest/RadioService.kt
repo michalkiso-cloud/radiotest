@@ -107,6 +107,12 @@ class RadioService : MediaLibraryService() {
     private var spotifyPonowaMs = 0L
     /** Ostatni zgłoszony stan Spotify (do wpisów w logu tylko przy zmianie). */
     private var spotifyStanLog: Boolean? = null
+    private val logStoi = Runnable {
+        if (spotifyPauza && trybSpotify && !trybRmf && spotifyStanLog != true) {
+            spotifyStanLog = true
+            LogMowy.dodaj("Spotify: stoi")
+        }
+    }
     private val ponowSpotify = Runnable {
         if (spotifyPauza && trybSpotify && !trybRmf && player.playWhenReady)
             naSpotify { it.playerApi.resume() }
@@ -1056,9 +1062,13 @@ class RadioService : MediaLibraryService() {
                 akcja(r)
                 r.playerApi.subscribeToPlayerState().setEventCallback { st ->
                     spotifyPauza = st.isPaused
-                    if (trybSpotify && !trybRmf && spotifyStanLog != st.isPaused) {
-                        spotifyStanLog = st.isPaused
-                        LogMowy.dodaj(if (st.isPaused) "Spotify: stoi" else "Spotify: gra")
+                    // „stoi” w logu dopiero, gdy pauza trwa ponad 3 s (zmiana utworu, buforowanie
+                    // i stan zaraz po połączeniu dają chwilowe „pauzy”, choć Spotify gra)
+                    handler.removeCallbacks(logStoi)
+                    if (st.isPaused && trybSpotify && !trybRmf && spotifyStanLog != true) handler.postDelayed(logStoi, 3000)
+                    if (!st.isPaused && trybSpotify && !trybRmf && spotifyStanLog != false) {
+                        spotifyStanLog = false
+                        LogMowy.dodaj("Spotify: gra")
                         // Android Auto przełącza ekran na aplikację, która ostatnio zaczęła grać (Spotify):
                         // chwilę później odzyskujemy pierwszeństwo, żeby na ekranie zostało Radio
                         if (!st.isPaused && bylePolaczenieAuta != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED) {
@@ -1068,7 +1078,7 @@ class RadioService : MediaLibraryService() {
                     }
                     if (!st.isPaused) { spotifyGralo = true; handler.removeCallbacks(sprawdzPauzeSpotify) }
                     else if (trybSpotify && !trybRmf && player.playWhenReady &&
-                        System.currentTimeMillis() - spotifyKomendaMs < 20_000 && spotifyPonowienia < 3 &&
+                        System.currentTimeMillis() - spotifyKomendaMs in 2_500..20_000 && spotifyPonowienia < 3 &&
                         System.currentTimeMillis() - spotifyPonowaMs > 4_000) {
                         spotifyPonowaMs = System.currentTimeMillis()
                         // zatrzymane zaraz po naszym starcie (np. Android Auto przełącza widok na Spotify): wznawiamy
