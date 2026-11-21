@@ -1069,12 +1069,6 @@ class RadioService : MediaLibraryService() {
                     if (!st.isPaused && trybSpotify && !trybRmf && spotifyStanLog != false) {
                         spotifyStanLog = false
                         LogMowy.dodaj("Spotify: gra")
-                        // Android Auto przełącza ekran na aplikację, która ostatnio zaczęła grać (Spotify):
-                        // chwilę później odzyskujemy pierwszeństwo, żeby na ekranie zostało Radio
-                        if (!st.isPaused && bylePolaczenieAuta != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED) {
-                            handler.removeCallbacks(odzyskajEkran)
-                            handler.postDelayed(odzyskajEkran, 1500)
-                        }
                     }
                     if (!st.isPaused) { spotifyGralo = true; handler.removeCallbacks(sprawdzPauzeSpotify) }
                     else if (trybSpotify && !trybRmf && player.playWhenReady &&
