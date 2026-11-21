@@ -1059,6 +1059,12 @@ class RadioService : MediaLibraryService() {
                     if (trybSpotify && !trybRmf && spotifyStanLog != st.isPaused) {
                         spotifyStanLog = st.isPaused
                         LogMowy.dodaj(if (st.isPaused) "Spotify: stoi" else "Spotify: gra")
+                        // Android Auto przełącza ekran na aplikację, która ostatnio zaczęła grać (Spotify):
+                        // chwilę później odzyskujemy pierwszeństwo, żeby na ekranie zostało Radio
+                        if (!st.isPaused && bylePolaczenieAuta != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED) {
+                            handler.removeCallbacks(odzyskajEkran)
+                            handler.postDelayed(odzyskajEkran, 1500)
+                        }
                     }
                     if (!st.isPaused) { spotifyGralo = true; handler.removeCallbacks(sprawdzPauzeSpotify) }
                     else if (trybSpotify && !trybRmf && player.playWhenReady &&
@@ -1129,6 +1135,31 @@ class RadioService : MediaLibraryService() {
     // ---------- Wyjście z auta ----------
     // Android Auto (zwłaszcza bezprzewodowe) przesyła dźwięk własnym kanałem, więc po
     // rozłączeniu Android nie zgłasza „odłączonych słuchawek” i radio grałoby z głośnika.
+    /**
+     * Krótki dźwięk ciszy z naszej aplikacji: system uznaje Radio za ostatnio grającą aplikację
+     * (przycisk multimediów i ekran Android Auto wracają do Radia), Spotify gra dalej.
+     */
+    private val odzyskajEkran = Runnable {
+        if (!trybSpotify || !player.playWhenReady) return@Runnable
+        runCatching {
+            val sr = 48000
+            val bajty = sr / 2 * 2  // 0,5 s, mono 16 bit
+            val t = android.media.AudioTrack.Builder()
+                .setAudioAttributes(android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                .setAudioFormat(android.media.AudioFormat.Builder()
+                    .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(sr).setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO).build())
+                .setTransferMode(android.media.AudioTrack.MODE_STATIC)
+                .setBufferSizeInBytes(bajty).build()
+            t.write(ByteArray(bajty), 0, bajty)
+            t.play()
+            handler.postDelayed({ runCatching { t.stop(); t.release() } }, 900)
+            LogMowy.dodaj("Android Auto: przywracam ekran Radia")
+        }.onFailure { LogMowy.dodaj("Android Auto: nie udało się przywrócić ekranu (${it.message})") }
+    }
+
     private val auto by lazy { androidx.car.app.connection.CarConnection(this) }
     private var bylePolaczenieAuta = androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED
     private val obserwatorAuta = androidx.lifecycle.Observer<Int> { typ ->
