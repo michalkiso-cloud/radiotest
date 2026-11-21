@@ -708,6 +708,14 @@ class MainActivity : ComponentActivity() {
                 Checkbox(checked = wznowAuto, onCheckedChange = { wznowAuto = it; prefs.edit().putBoolean("wznow_auto", it).apply() })
                 Text("Wznów po połączeniu z Android Auto", fontSize = 14.sp)
             }
+            var ekranAa by remember { mutableStateOf(prefs.getBoolean("ekran_aa", true)) }
+            Row(
+                Modifier.fillMaxWidth().clickable { ekranAa = !ekranAa; prefs.edit().putBoolean("ekran_aa", ekranAa).apply() },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = ekranAa, onCheckedChange = { ekranAa = it; prefs.edit().putBoolean("ekran_aa", it).apply() })
+                Text("Po wiadomościach wracaj na ekran Radia w Android Auto (gdy gra Spotify)", fontSize = 14.sp)
+            }
             var startWifi by remember { mutableStateOf(WifiAuta.wlaczone(this@MainActivity)) }
             Row(
                 Modifier.fillMaxWidth().clickable { startWifi = !startWifi; WifiAuta.ustaw(this@MainActivity, startWifi) },

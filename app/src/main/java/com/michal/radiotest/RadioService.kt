@@ -199,7 +199,13 @@ class RadioService : MediaLibraryService() {
         trybRmf = false
         LogMowy.dodaj("← powrót do radia głównego")
         odswiezOpis()
-        if (trybSpotify) { spotifyKomendaMs = System.currentTimeMillis(); spotifyPonowienia = 0; naSpotify { it.playerApi.resume() } }
+        if (trybSpotify) {
+            spotifyKomendaMs = System.currentTimeMillis(); spotifyPonowienia = 0; naSpotify { it.playerApi.resume() }
+            if (getSharedPreferences("ustawienia", MODE_PRIVATE).getBoolean("ekran_aa", true)) {
+                handler.removeCallbacks(wrocEkranAA)
+                handler.postDelayed(wrocEkranAA, 3000)
+            }
+        }
         przejscie(koniec = { rmf.stop(); LogMowy.graRmf.value = false }) { t ->
             rmf.ustawGlosnosc(1 - t)
             if (!trybSpotify) player.volume = t
@@ -428,6 +434,7 @@ class RadioService : MediaLibraryService() {
             }
         }
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (cichaZmiana) return  // niesłyszalne „pauza → gra” dla ekranu Android Auto
             val powod = when (reason) {
                 Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "przycisk"
                 Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "inna aplikacja przejęła dźwięk"
@@ -1140,28 +1147,21 @@ class RadioService : MediaLibraryService() {
     // Android Auto (zwłaszcza bezprzewodowe) przesyła dźwięk własnym kanałem, więc po
     // rozłączeniu Android nie zgłasza „odłączonych słuchawek” i radio grałoby z głośnika.
     /**
-     * Krótki dźwięk ciszy z naszej aplikacji: system uznaje Radio za ostatnio grającą aplikację
-     * (przycisk multimediów i ekran Android Auto wracają do Radia), Spotify gra dalej.
+     * Android Auto pokazuje aplikację, której sesja ostatnio przeszła w stan „gra”. Po wiadomościach
+     * wznowienie Spotify przełącza ekran na Spotify, więc nasza sesja robi niesłyszalne
+     * „pauza → gra” (w trybie Spotify odtwarzacz gra tylko ciszę), żeby AA wróciło do Radia.
      */
-    private val odzyskajEkran = Runnable {
-        if (!trybSpotify || !player.playWhenReady) return@Runnable
-        runCatching {
-            val sr = 48000
-            val bajty = sr / 2 * 2  // 0,5 s, mono 16 bit
-            val t = android.media.AudioTrack.Builder()
-                .setAudioAttributes(android.media.AudioAttributes.Builder()
-                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC).build())
-                .setAudioFormat(android.media.AudioFormat.Builder()
-                    .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(sr).setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO).build())
-                .setTransferMode(android.media.AudioTrack.MODE_STATIC)
-                .setBufferSizeInBytes(bajty).build()
-            t.write(ByteArray(bajty), 0, bajty)
-            t.play()
-            handler.postDelayed({ runCatching { t.stop(); t.release() } }, 900)
-            LogMowy.dodaj("Android Auto: przywracam ekran Radia")
-        }.onFailure { LogMowy.dodaj("Android Auto: nie udało się przywrócić ekranu (${it.message})") }
+    private var cichaZmiana = false
+    private val wrocEkranAA = Runnable {
+        if (!trybSpotify || trybRmf || !player.playWhenReady || player.mediaItemCount == 0 ||
+            bylePolaczenieAuta == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED) return@Runnable
+        cichaZmiana = true
+        player.pause()
+        handler.postDelayed({
+            if (cichaZmiana && player.mediaItemCount > 0) player.play()
+            handler.post { cichaZmiana = false }
+            LogMowy.dodaj("Android Auto: wracam na ekran Radia")
+        }, 500)
     }
 
     private val auto by lazy { androidx.car.app.connection.CarConnection(this) }
