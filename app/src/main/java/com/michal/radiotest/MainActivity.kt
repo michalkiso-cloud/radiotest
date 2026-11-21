@@ -180,6 +180,14 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun Ekran() {
+        // licznik trybu auto odświeżany co 5 s na każdym ekranie (też w dużym odtwarzaczu)
+        LaunchedEffect(Unit) {
+            while (true) {
+                autoMin = StanLosowania.autoSek(this@MainActivity) / 60
+                losujeTeraz = StanLosowania.losujeTeraz(this@MainActivity)
+                delay(5_000)
+            }
+        }
         BackHandler(enabled = pokazLog) { pokazLog = false }
         BackHandler(enabled = pokazOdtwarzacz && !pokazLog) { pokazOdtwarzacz = false }
         var zakladka by remember { mutableIntStateOf(0) }
@@ -274,13 +282,6 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun Naglowek() {
-        LaunchedEffect(Unit) {
-            while (true) {
-                autoMin = StanLosowania.autoSek(this@MainActivity) / 60
-                losujeTeraz = StanLosowania.losujeTeraz(this@MainActivity)
-                delay(5_000)
-            }
-        }
         val ciemny = MaterialTheme.colorScheme.background.red < 0.5f
         Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
