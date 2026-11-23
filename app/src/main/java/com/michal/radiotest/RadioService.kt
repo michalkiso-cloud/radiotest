@@ -1174,10 +1174,11 @@ class RadioService : MediaLibraryService() {
             typ != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED) {
             val u = getSharedPreferences("ustawienia", MODE_PRIVATE)
             LogMowy.dodaj("Diag: wznowienie AA – opcja=${u.getBoolean("wznow_auto", false)}, pauza przy wyjściu=${u.getBoolean("pauza_auta", false)}")
-            if (u.getBoolean("wznow_auto", false) && u.getBoolean("pauza_auta", false)) {
+            // jak w skrypcie: po wejściu do auta gramy zawsze, niezależnie od tego, jak radio zostało zatrzymane
+            if (u.getBoolean("wznow_auto", false)) {
                 handler.postDelayed({
                     if (player.playWhenReady) { LogMowy.dodaj("Diag: po 3 s już gra, nic nie robię"); return@postDelayed }
-                    LogMowy.dodaj("Połączono z Android Auto: wznawiam")
+                    LogMowy.dodaj("Połączono z Android Auto: włączam radio")
                     if (player.mediaItemCount > 0 && obecna != null) player.play() else losujZeSchowkiem()
                 }, 3000)
             }

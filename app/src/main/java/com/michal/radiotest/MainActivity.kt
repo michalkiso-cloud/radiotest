@@ -706,7 +706,7 @@ class MainActivity : ComponentActivity() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(checked = wznowAuto, onCheckedChange = { wznowAuto = it; prefs.edit().putBoolean("wznow_auto", it).apply() })
-                Text("Wznów po połączeniu z Android Auto", fontSize = 14.sp)
+                Text("Graj po połączeniu z Android Auto (zawsze, jak w skrypcie)", fontSize = 14.sp)
             }
             var ekranAa by remember { mutableStateOf(prefs.getBoolean("ekran_aa", true)) }
             Row(
