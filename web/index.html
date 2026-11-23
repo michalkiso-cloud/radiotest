@@ -111,7 +111,7 @@ dialog .dol{display:flex;justify-content:flex-end;gap:4px;margin-top:16px}
 <dialog id="okno"></dialog>
 
 <script type="module">
-const WERSJA = "web 1.12";
+const WERSJA = "web 1.13";
 const BLOK_S = 20, PROG = 0.25, POTW_MOWA = 3, POTW_MUZYKA = 2, IDX_MOWA = 0, IDX_MUZYKA = 132;
 const COFNIJ_BLOKOW = 1, KONIEC_MOWY_S = 20, TIK_S = 5;
 const ZN_DI = "{KLUCZ_DI}";
@@ -181,6 +181,45 @@ function zeSchowka(z) {
   U.zmiana = z.zmiana;
 }
 let schowek = true;
+let ostZ = null;   // ostatnio pobrany schowek: nieznane pola (np. z telefonu) odsyłamy bez zmian
+
+// ---------- Statystyki słuchania (wspólne z telefonem): pole „statystyki_web”, zapis przyrostowy ----------
+let PEND = { t: {}, l: {}, r: {} };
+try { const x = JSON.parse(localStorage.getItem("statPend") || "null"); if (x && x.t) PEND = x; } catch (e) {}
+const zapiszPend = () => { try { localStorage.setItem("statPend", JSON.stringify(PEND)); } catch (e) {} };
+const pustyPend = () => !Object.keys(PEND.t).length && !Object.keys(PEND.l).length && !Object.keys(PEND.r).length;
+function statDodaj(rodzaj, nazwa, ile) {
+  const d = dzisiaj();
+  if (rodzaj === "r") PEND.r[d] = (PEND.r[d] || 0) + ile;
+  else { const m = PEND[rodzaj][d] || (PEND[rodzaj][d] = {}); m[nazwa] = (m[nazwa] || 0) + ile; }
+  zapiszPend();
+}
+function scalStat(st, p) {
+  const w = { t: { ...((st && st.t) || {}) }, l: { ...((st && st.l) || {}) }, r: { ...((st && st.r) || {}) } };
+  for (const k of ["t", "l"]) for (const [d, m] of Object.entries(p[k])) { const o = w[k][d] = { ...(w[k][d] || {}) }; for (const [n, v] of Object.entries(m)) o[n] = Math.round((o[n] || 0) + v); }
+  for (const [d, v] of Object.entries(p.r)) w.r[d] = (w.r[d] || 0) + v;
+  const granica = new Date(Date.now() - 400 * 864e5), z = (n) => String(n).padStart(2, "0");
+  const g = `${granica.getFullYear()}-${z(granica.getMonth() + 1)}-${z(granica.getDate())}`;
+  for (const k of ["t", "l", "r"]) for (const d of Object.keys(w[k])) if (d < g) delete w[k][d];
+  return w;
+}
+/** PUT całości: pola schowka, których nie znamy, zostają; zaległe statystyki są dodawane do istniejących. */
+async function putUst(z, naKoniec) {
+  const baza = z || ostZ || {};
+  const p = PEND; PEND = { t: {}, l: {}, r: {} };
+  const tresc = { ...baza, ...JSON.parse(doSchowka()), statystyki_web: scalStat(baza.statystyki_web, p) };
+  try {
+    const r = await fetch("/ust", { method: "PUT", body: JSON.stringify(tresc), keepalive: !!naKoniec });
+    if (!r.ok) throw new Error(r.status);
+    ostZ = tresc; zapiszPend();
+  } catch (e) { PEND = scalStatPend(p, PEND); zapiszPend(); }
+}
+function scalStatPend(a, b) {
+  const w = { t: {}, l: {}, r: { ...a.r } };
+  for (const k of ["t", "l"]) for (const src of [a, b]) for (const [d, m] of Object.entries(src[k])) { const o = w[k][d] = w[k][d] || {}; for (const [n, v] of Object.entries(m)) o[n] = (o[n] || 0) + v; }
+  for (const [d, v] of Object.entries(b.r)) w.r[d] = (w.r[d] || 0) + v;
+  return w;
+}
 // Stan trybu auto (stacja i wykorzystane sekundy) ma własny czas „kiedy”, niezależny od „zmiana” ustawień.
 function autoZeSchowka(z) {
   const a = z && z.auto; if (!a || !a.adres || (a.kiedy || 0) <= (U.los.autoKiedy || 0)) return false;
@@ -192,7 +231,7 @@ async function pobierzZ() {
   const r = await fetch("/ust", { cache: "no-store" });
   if (r.status === 501) { schowek = false; return null; }
   if (!r.ok) return null;
-  return await r.json();
+  const z = await r.json(); ostZ = z; return z;
 }
 /** Pobiera schowek, przyjmuje nowsze dane; zwraca true, gdy schowek ma coś starszego niż my (trzeba wysłać). */
 function przyjmijZ(z) {
@@ -210,13 +249,14 @@ async function wyslijUst(naKoniec) {
   if (!schowek) return;
   clearTimeout(zapisTimer); zapisTimer = 0;
   try {
-    if (!naKoniec) { const z = await pobierzZ(); if (!schowek) return; if (z) przyjmijZ(z); }
-    await fetch("/ust", { method: "PUT", body: doSchowka(), keepalive: !!naKoniec });
+    let z = null;
+    if (!naKoniec) { z = await pobierzZ(); if (!schowek) return; if (z) przyjmijZ(z); }
+    await putUst(z, naKoniec);
   } catch (e) {}
 }
 async function pobierzUst() {
   if (!schowek) return;
-  try { const z = await pobierzZ(); if (z && przyjmijZ(z)) await fetch("/ust", { method: "PUT", body: doSchowka() }); } catch (e) {}
+  try { const z = await pobierzZ(); if (z && (przyjmijZ(z) || !pustyPend())) await putUst(z); } catch (e) {}
 }
 /** Zapisuje stan trybu auto (nowe losowanie, pauza, co 5 min) i wysyła go. */
 function zapiszAuto(naKoniec) {
@@ -227,7 +267,7 @@ function zapiszAuto(naKoniec) {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") pobierzUst();
   else if (U.los.aktywne && U.trybAuto && graTeraz) zapiszAuto(true);
-  else if (zapisTimer) { wyslijUst(true); zapisTimer = 0; }
+  else if (zapisTimer || !pustyPend()) { wyslijUst(true); zapisTimer = 0; }
 });
 setInterval(pobierzUst, 5 * 60 * 1000);
 const stacja = (id) => U.stacje.find(s => s.id === id);
@@ -457,7 +497,7 @@ function pauza() {
     if (trybSp) spPauza();
     if (gl) { const g = gl; rampa(g.gain, g.gain.gain.value, 0, 0.3); setTimeout(() => { if (!graTeraz) { A.stop(); B.stop(); } }, 350); }
     status("Pauza."); dodajLog("Pauza");
-    if (U.los.aktywne) zapiszAuto();
+    if (U.los.aktywne && U.trybAuto) zapiszAuto(); else wyslijUst();
   } else if (trybSp) { graTeraz = true; spWznow(); status("Gra."); if (U.mowa.wl) nasluchStart(); }
   else graj(obecna, U.los.aktywne);
   rysujPanel();
@@ -467,7 +507,7 @@ function stop() {
   przerwijRmf(); nasluchStop();
   if (trybSp) { trybSp = false; spPauza(); }
   if (A) { A.stop(); B.stop(); }
-  if (U.los.aktywne) zapiszAuto();
+  if (U.los.aktywne && U.trybAuto) zapiszAuto(); else wyslijUst();
   U.los.aktywne = false; zapisz(false);
   status("Zatrzymane."); rysujPanel(); rysuj();
 }
@@ -479,7 +519,7 @@ const SP_ZAKRESY = "streaming user-read-email user-read-private user-modify-play
 const spRedirect = () => location.origin + "/";
 let SP = {}; try { SP = JSON.parse(localStorage.getItem("spotify") || "{}"); } catch (e) {}
 const spZapisz = () => { try { localStorage.setItem("spotify", JSON.stringify(SP)); } catch (e) {} };
-let spPlayer = null, spDev = null, trybSp = false, spLista = null;
+let spPlayer = null, spDev = null, trybSp = false, spLista = null, spGra = false;
 const b64url = (b) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 async function spZgoda() {
   const v = b64url(crypto.getRandomValues(new Uint8Array(48)));
@@ -540,6 +580,7 @@ function spOdtwarzacz() {
     });
     spPlayer.addListener("playback_error", ({ message }) => dodajLog("Spotify: błąd odtwarzania " + message));
     spPlayer.addListener("player_state_changed", (st) => {
+      if (st) spGra = !st.paused;
       if (!st || !trybSp) return;
       const tr = st.track_window && st.track_window.current_track; if (!tr) return;
       if (st.context && st.context.uri) { SP.ostatni = { kontekst: st.context.uri, uri: tr.uri, poz: st.position || 0, nr: U.los.nr || 0 }; spZapisz(); }
@@ -617,12 +658,12 @@ async function losuj() {
   if (U.trybAuto) {
     const b = U.los.autoId && wLosowaniu(U.los.autoId) ? stacja(U.los.autoId) : null;
     if (b && U.los.autoSek < U.autoMin * 60) s = b;
-    else { s = wylosuj(U.los.autoId); if (s) { U.los.autoId = s.id; U.los.autoSek = 0; U.los.nr = (U.los.nr || 0) + 1; } }
+    else { s = wylosuj(U.los.autoId); if (s) { U.los.autoId = s.id; U.los.autoSek = 0; U.los.nr = (U.los.nr || 0) + 1; statDodaj("l", s.nazwa, 1); } }
     if (s) U.los.autoKiedy = Date.now();
   } else {
     const b = U.los.dzienData === dzisiaj() && U.los.dzienId && wLosowaniu(U.los.dzienId) ? stacja(U.los.dzienId) : null;
     s = b || wylosuj(null);
-    if (!b && s) { U.los.dzienData = dzisiaj(); U.los.dzienId = s.id; U.los.nr = (U.los.nr || 0) + 1; }
+    if (!b && s) { U.los.dzienData = dzisiaj(); U.los.dzienId = s.id; U.los.nr = (U.los.nr || 0) + 1; statDodaj("l", s.nazwa, 1); }
   }
   zapisz();
   if (s) graj(s, true);
@@ -739,6 +780,7 @@ function wejdzNaRmf(ks) {
     break;
   }
   R.tryb = true;
+  statDodaj("r", null, 1);
   R.wyr.port.postMessage({ ust: { wlaczone: U.glos.wl, cel: U.glos.cel, maks: U.glos.maks, korekta: U.glos.kor.rmf24 || 0 } });
   R.node.port.postMessage({ start });
   dodajLog(`→ RMF24 (opóźnienie ${Math.max(0, (R.zapisane - start) / R.sr).toFixed(0)} s)`);
@@ -849,12 +891,25 @@ setInterval(() => {
   if (R.tryb && U.wzgledny) return;
   U.los.autoSek += TIK_S;
   if (U.los.autoSek >= U.autoMin * 60) {
-    const s = wylosuj(U.los.autoId); U.los.autoSek = 0; U.los.autoId = s ? s.id : null; U.los.nr = (U.los.nr || 0) + 1; zapiszAuto();
+    const s = wylosuj(U.los.autoId); U.los.autoSek = 0; U.los.autoId = s ? s.id : null; U.los.nr = (U.los.nr || 0) + 1; if (s) statDodaj("l", s.nazwa, 1); zapiszAuto();
     dodajLog("Auto: minął czas, zmiana stacji na " + (s ? s.nazwa : "(brak)"));
     if (s) graj(s, true);
   } else { if (U.los.autoSek % 300 < TIK_S) zapiszAuto(); else zapisz(false); rysujPanel(); }
 }, TIK_S * 1000);
 setInterval(() => { if (ponowTimer && proby === 0) ponowTimer = 0; }, 1000);
+// czas słuchania: tylko gdy faktycznie gra; w czasie mowy liczy się „RMF24 (mowa)”
+let statOst = Date.now(), statFlush = Date.now();
+setInterval(() => {
+  const teraz = Date.now(), dt = Math.min(10, (teraz - statOst) / 1000); statOst = teraz;
+  if (graTeraz && obecna) {
+    let nazwa = null;
+    if (R.tryb) nazwa = "RMF24 (mowa)";
+    else if (trybSp) { if (spGra) nazwa = obecna.nazwa; }
+    else if (gl && gl.gra && !gl.el.paused) nazwa = obecna.nazwa;
+    if (nazwa) statDodaj("t", nazwa, dt);
+  }
+  if (teraz - statFlush > 4 * 60 * 1000 && !pustyPend()) { statFlush = teraz; wyslijUst(); }
+}, 5000);
 
 // ---------- Ekran ----------
 let zakladka = 0, pokazLog = false, statusTekst = "Wybierz stację.";
