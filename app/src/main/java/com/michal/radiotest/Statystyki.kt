@@ -20,7 +20,31 @@ object Statystyki {
         pr.edit().putLong(klucz, pr.getLong(klucz, 0) + ile).apply()
     }
 
-    fun resetuj(c: Context) = p(c).edit().clear().apply()
+    fun resetuj(c: Context) {
+        p(c).edit().clear().apply()
+        pw(c).edit().clear().apply()
+        Synchro.wyczyscStatWeb()
+    }
+
+    // ---- statystyki z przeglądarki: pole „statystyki_web” w schowku synchronizacji ----
+    private fun pw(c: Context) = c.getSharedPreferences("statystyki_web", Context.MODE_PRIVATE)
+    fun przyjmijWeb(c: Context, o: org.json.JSONObject?) {
+        pw(c).edit().putString("json", o?.toString() ?: "{}").apply()
+    }
+    /** Wpisy ze strony w tym samym formacie kluczy co w telefonie (t|data|nazwa, l|data|nazwa, r|data). */
+    private fun wpisyWeb(c: Context): Map<String, Long> {
+        val o = runCatching { org.json.JSONObject(pw(c).getString("json", "{}") ?: "{}") }.getOrNull() ?: return emptyMap()
+        val m = HashMap<String, Long>()
+        for (typ in listOf("t", "l")) {
+            val dni = o.optJSONObject(typ) ?: continue
+            for (d in dni.keys()) {
+                val st = dni.optJSONObject(d) ?: continue
+                for (n in st.keys()) m["$typ|$d|$n"] = st.optLong(n)
+            }
+        }
+        o.optJSONObject("r")?.let { r -> for (d in r.keys()) m["r|$d"] = r.optLong(d) }
+        return m
+    }
 
     fun czas(c: Context, nazwa: String, sek: Long) = dodaj(c, "t|${dzis()}|$nazwa", sek)
     fun losowanie(c: Context, nazwa: String) = dodaj(c, "l|${dzis()}|$nazwa", 1)
@@ -29,8 +53,8 @@ object Statystyki {
     data class Wiersz(val nazwa: String, val sek: Long, val losowania: Long)
     data class Zestaw(val wiersze: List<Wiersz>, val razem: Long, val rmf: Long, val losowania: Long, val dniZDanymi: Int)
 
-    /** dni = 1 (dziś), 7, 30 albo null (wszystko). */
-    fun zestaw(c: Context, dni: Int?): Zestaw {
+    /** dni = 1 (dziś), 7, 30 albo null (wszystko); zrodlo: 0 razem, 1 telefon, 2 przeglądarka. */
+    fun zestaw(c: Context, dni: Int?, zrodlo: Int = 0): Zestaw {
         val od = dni?.let { LocalDate.now().minusDays((it - 1).toLong()).toString() }
         val czasy = HashMap<String, Long>()
         val losy = HashMap<String, Long>()
@@ -38,11 +62,16 @@ object Statystyki {
         val daty = HashSet<String>()
         val stare = ArrayList<String>()
         val granica = LocalDate.now().minusDays(DNI_PAMIECI).toString()
-        for ((k, v) in p(c).all) {
+        val wpisy = ArrayList<Pair<String, Any?>>()
+        if (zrodlo != 2) p(c).all.forEach { (k, v) -> wpisy.add(k to v) }
+        if (zrodlo != 1) wpisyWeb(c).forEach { (k, v) -> wpisy.add("web" + k to v) }
+        for ((k0, v) in wpisy) {
+            val zWeb = k0.startsWith("web")
+            val k = k0.removePrefix("web")
             val cz = k.split("|", limit = 3)
             if (cz.size < 2) continue
             val data = cz[1]
-            if (data < granica) { stare.add(k); continue }
+            if (data < granica) { if (!zWeb) stare.add(k); continue }
             if (od != null && data < od) continue
             val n = (v as? Long) ?: continue
             when (cz[0]) {

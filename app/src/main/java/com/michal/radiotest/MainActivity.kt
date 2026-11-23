@@ -434,11 +434,12 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) { while (true) { delay(15_000); odswiez++ } }
         val dni = listOf(1, 7, 30, null)[okres]
         var pytanie by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { Synchro.teraz() }  // świeże dane z przeglądarki
         val z = remember(okres, odswiez) { Statystyki.zestaw(c, dni) }
         if (pytanie) AlertDialog(
             onDismissRequest = { pytanie = false },
             title = { Text("Resetować statystyki?") },
-            text = { Text("Wszystkie zapisane dane (czas, losowania, wiadomości) zostaną usunięte.") },
+            text = { Text("Wszystkie zapisane dane (czas, losowania, wiadomości) zostaną usunięte, w telefonie i z przeglądarki.") },
             confirmButton = { TextButton(onClick = { Statystyki.resetuj(c); pytanie = false; odswiez++ }) { Text("Resetuj") } },
             dismissButton = { TextButton(onClick = { pytanie = false }) { Text("Anuluj") } }
         )
@@ -449,6 +450,7 @@ class MainActivity : ComponentActivity() {
                     Pigulka(n, wyrozniona = okres == i) { okres = i }
                 }
             }
+
             Text("Słuchane: ${Statystyki.czytelnie(z.razem)}" +
                 if (dni == null || dni > 1) " (dni: ${z.dniZDanymi})" else "",
                 style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -475,7 +477,7 @@ class MainActivity : ComponentActivity() {
                     if (w.losowania > 0) Text("Wylosowana: ${w.losowania}×", style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Text("RMF24 (mowa) to czas, gdy zamiast stacji grały wiadomości. Spotify liczy się tylko, gdy faktycznie gra.",
+            Text("RMF24 (mowa) to czas, gdy zamiast stacji grały wiadomości. Spotify liczy się tylko, gdy faktycznie gra. Wliczone jest też słuchanie w przeglądarce.",
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
             OutlinedButton(onClick = { pytanie = true }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                 Text("Resetuj statystyki")

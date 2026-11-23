@@ -75,7 +75,7 @@ object Synchro {
         watek.execute {
             val wynik = runCatching {
                 val zdalne = pobierz(kod)
-                zdalne?.let { przyjmijAuto(it) }
+                zdalne?.let { przyjmijAuto(it); Statystyki.przyjmijWeb(app, it.optJSONObject("statystyki_web")) }
                 val lokalnaZmiana = p().getLong("zmiana", 0L)
                 val zdalnaZmiana = zdalne?.optLong("zmiana", 0L) ?: 0L
                 when {
@@ -100,6 +100,20 @@ object Synchro {
             }
             val g = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
             stan.value = wynik.fold({ "$g $it ✓" }, { "$g błąd: ${it.message}" })
+        }
+    }
+
+    /** Reset statystyk: czyści też czas słuchania zapisany przez stronę (bez zmiany „zmiana”). */
+    fun wyczyscStatWeb() {
+        if (!uruchomione || kod(app).isBlank()) return
+        val kod = kod(app)
+        watek.execute {
+            runCatching {
+                val zdalne = pobierz(kod) ?: return@runCatching
+                if (!zdalne.has("statystyki_web")) return@runCatching
+                zdalne.put("statystyki_web", JSONObject())
+                wyslij(kod, zdalne)
+            }
         }
     }
 
