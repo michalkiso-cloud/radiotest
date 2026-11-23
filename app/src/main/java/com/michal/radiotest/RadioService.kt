@@ -267,13 +267,13 @@ class RadioService : MediaLibraryService() {
                     AudioManager.AUDIOFOCUS_LOSS, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ->
                         if (rozmowa() && player.playWhenReady) {
                             pauzaRozmowa = true
+                            rozmowaWAucie = bylePolaczenieAuta != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED
                             LogMowy.dodaj("Rozmowa telefoniczna: pauza")
                             player.pause()
                         } else LogMowy.dodaj("Inna aplikacja użyła dźwięku, gram dalej")
                     AudioManager.AUDIOFOCUS_GAIN -> if (pauzaRozmowa) {
                         pauzaRozmowa = false
-                        LogMowy.dodaj("Koniec rozmowy: wznawiam")
-                        player.play()
+                        poRozmowie()
                     }
                 }
             }, handler)
@@ -282,6 +282,7 @@ class RadioService : MediaLibraryService() {
     /** Rozmowa telefoniczna (co 5 s): przy Spotify aplikacja nie ma fokusu dźwięku, więc sama nie dostaje
      *  sygnału o rozmowie. Przerywamy RMF24 i radio, po rozmowie wznawiamy. */
     private var rmfPrzezRozmowe = false
+    private var rozmowaWAucie = false
     private fun pilnujRozmowy() {
         if (rozmowa()) {
             if (trybRmf) {
@@ -291,24 +292,43 @@ class RadioService : MediaLibraryService() {
             }
             if (!trybSpotify && player.playWhenReady) {
                 pauzaRozmowa = true
+                rozmowaWAucie = bylePolaczenieAuta != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED
                 LogMowy.dodaj("Rozmowa telefoniczna: pauza")
                 player.pause()
             }
         } else {
             if (rmfPrzezRozmowe) {
                 rmfPrzezRozmowe = false
-                if (trybSpotify && player.playWhenReady) {
-                    LogMowy.dodaj("Koniec rozmowy: wznawiam Spotify")
-                    spotifyKomendaMs = System.currentTimeMillis(); spotifyPonowienia = 0
-                    naSpotify { it.playerApi.resume() }
-                }
+                val wAucie = bylePolaczenieAuta != androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED
+                handler.postDelayed({
+                    if (wAucie && bylePolaczenieAuta == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED)
+                        LogMowy.dodaj("Koniec rozmowy, ale auto rozłączone: nie wznawiam Spotify")
+                    else if (trybSpotify && player.playWhenReady) {
+                        LogMowy.dodaj("Koniec rozmowy: wznawiam Spotify")
+                        spotifyKomendaMs = System.currentTimeMillis(); spotifyPonowienia = 0
+                        naSpotify { it.playerApi.resume() }
+                    }
+                }, 3000)
             }
             if (pauzaRozmowa) {
                 pauzaRozmowa = false
-                LogMowy.dodaj("Koniec rozmowy: wznawiam")
-                player.play()
+                poRozmowie()
             }
         }
+    }
+
+    private fun poRozmowie() {
+                // rozmowa w aucie zakończona wyłączeniem auta: koniec rozmowy i rozłączenie Android Auto
+                // przychodzą prawie razem – czekamy 3 s i nie wznawiamy, jeśli auto się rozłączyło
+                handler.postDelayed({
+                    if (rozmowaWAucie && bylePolaczenieAuta == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_NOT_CONNECTED) {
+                        LogMowy.dodaj("Koniec rozmowy, ale auto rozłączone: nie wznawiam")
+                        getSharedPreferences("ustawienia", MODE_PRIVATE).edit().putBoolean("pauza_auta", true).apply()
+                    } else if (!player.playWhenReady && player.mediaItemCount > 0) {
+                        LogMowy.dodaj("Koniec rozmowy: wznawiam")
+                        player.play()
+                    }
+                }, 3000)
     }
 
     private fun wezFokus() { if (!trybSpotify) am.requestAudioFocus(zadanieFokusu) }
